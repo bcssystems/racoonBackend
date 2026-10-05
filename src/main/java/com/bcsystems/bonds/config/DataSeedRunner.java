@@ -1,0 +1,343 @@
+package com.bcsystems.bonds.config;
+
+import com.bcsystems.bonds.domain.Permiso;
+import com.bcsystems.bonds.domain.Persona;
+import com.bcsystems.bonds.domain.Rol;
+import com.bcsystems.bonds.domain.Categoria;
+import com.bcsystems.bonds.repository.PermisoRepository;
+import com.bcsystems.bonds.repository.PersonaRepository;
+import com.bcsystems.bonds.repository.RolRepository;
+import com.bcsystems.bonds.repository.CategoriaRepository;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Component
+public class DataSeedRunner implements CommandLineRunner {
+
+    private final PermisoRepository permisoRepository;
+    private final RolRepository rolRepository;
+    private final PersonaRepository personaRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final CategoriaRepository categoriaRepository;
+
+    public DataSeedRunner(PermisoRepository permisoRepository,
+                          RolRepository rolRepository,
+                          PersonaRepository personaRepository,
+                          PasswordEncoder passwordEncoder,
+                          CategoriaRepository categoriaRepository) {
+        this.permisoRepository = permisoRepository;
+        this.rolRepository = rolRepository;
+        this.personaRepository = personaRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.categoriaRepository = categoriaRepository;
+    }
+
+    @Override
+    @Transactional
+    public void run(String... args) {
+        seedPermisosYRoles();
+        migrarPersonasRol();
+        seedAdminInicial();
+        seedCategoriaGeneral();
+    }
+
+    private void seedCategoriaGeneral() {
+        if (!categoriaRepository.existsByNombreIgnoreCase("General")) {
+            categoriaRepository.save(Categoria.builder()
+                    .nombre("General")
+                    .descripcion("Categoría general")
+                    .activo(true)
+                    .build());
+        }
+    }
+
+    private void seedPermisosYRoles() {
+        Map<String, List<String[]>> permisosPorModulo = buildCatalogo();
+
+        Map<String, Permiso> permisoMap = new HashMap<>();
+        List<Permiso> nuevosPermisos = new ArrayList<>();
+        for (var entry : permisosPorModulo.entrySet()) {
+            String modulo = entry.getKey();
+            for (String[] perm : entry.getValue()) {
+                String clave = perm[0];
+                Permiso p = permisoRepository.findByClave(clave).orElse(null);
+                if (p == null) {
+                    p = Permiso.builder()
+                            .clave(clave)
+                            .nombre(perm[1])
+                            .descripcion(perm[1] + " en " + modulo)
+                            .modulo(modulo)
+                            .activo(true)
+                            .build();
+                    p = permisoRepository.save(p);
+                    nuevosPermisos.add(p);
+                }
+                permisoMap.put(clave, p);
+            }
+        }
+        permisoRepository.findAll().forEach(p -> permisoMap.put(p.getClave(), p));
+
+        Set<Permiso> todosLosPermisos = new HashSet<>(permisoMap.values());
+
+        reasignarPermisosExistentes(rolRepository.findAll(),
+                nuevosPermisos, todosLosPermisos);
+
+        Map<String, Set<Permiso>> permisosPorRol = new LinkedHashMap<>();
+        permisosPorRol.put("ADMINISTRADOR", todosLosPermisos);
+        permisosPorRol.put("SISTEMAS", todosLosPermisos);
+        permisosPorRol.put("AUDITORIAS", extraerPermisos(permisosPorModulo, permisoMap,
+                List.of("KARDEX", "AUDITORIAS", "HISTORIAL_VENTAS", "CORTES", "GASTOS")));
+        permisosPorRol.put("USUARIO", extraerPermisos(permisosPorModulo, permisoMap, List.of(), List.of(
+                "VENTAS_VER", "VENTAS_CREAR",
+                "CLIENTES_VER", "CLIENTES_CREAR",
+                "COTIZACIONES_VER", "COTIZACIONES_CREAR", "COTIZACIONES_CONVERTIR",
+                "GASTOS_VER", "GASTOS_CREAR",
+                "CREDITOS_VER", "CREDITOS_ABONAR",
+                "CAJAS_VER", "CAJAS_APERTURA", "CAJAS_CIERRE", "CAJAS_CORTE", "CAJAS_MOVIMIENTO",
+                "HISTORIAL_VENTAS_VER",
+                "PRODUCTOS_VER",
+                "SUCURSALES_VER",
+                "TIPOS_PAGO_VER",
+                "CATEGORIAS_VER",
+                "PROVEEDORES_VER",
+                "KARDEX_VER",
+                "MOVIMIENTOS_INVENTARIO_VER",
+                "CANCELACIONES_VER",
+                "PROMOCIONES_VER",
+                "CONFIGURACION_VER")));
+
+        for (var entry : permisosPorRol.entrySet()) {
+            String nombre = entry.getKey();
+            Set<Permiso> permisos = entry.getValue();
+            if (rolRepository.existsByNombreIgnoreCase(nombre)) {
+                continue;
+            }
+            Rol rol = Rol.builder()
+                    .nombre(nombre)
+                    .descripcion("Rol de sistema")
+                    .esSistema(true)
+                    .activo(true)
+                    .permisos(permisos.isEmpty() ? new ArrayList<>(todosLosPermisos) : new ArrayList<>(permisos))
+                    .build();
+            rolRepository.save(rol);
+        }
+    }
+
+    private void reasignarPermisosExistentes(List<Rol> rolesExistentes,
+                                             List<Permiso> nuevosPermisos,
+                                             Set<Permiso> todosLosPermisos) {
+        if (rolesExistentes == null || rolesExistentes.isEmpty()) return;
+        for (Rol rol : rolesExistentes) {
+            boolean esAdmin = rol.getNombre().equalsIgnoreCase("ADMINISTRADOR")
+                    || rol.getNombre().equalsIgnoreCase("SISTEMAS");
+            List<Permiso> permisosRol = rol.getPermisos() != null
+                    ? new ArrayList<>(rol.getPermisos()) : new ArrayList<>();
+            boolean cambio = false;
+            if (esAdmin) {
+                Set<Permiso> objetivo = new HashSet<>(todosLosPermisos);
+                if (objetivo.containsAll(permisosRol) && objetivo.size() == permisosRol.size()) {
+                    continue;
+                }
+                permisosRol = new ArrayList<>(objetivo);
+                cambio = true;
+            } else {
+                for (Permiso p : nuevosPermisos) {
+                    if (!permisosRol.contains(p)) {
+                        permisosRol.add(p);
+                        cambio = true;
+                    }
+                }
+            }
+            if (cambio) {
+                rol.setPermisos(permisosRol);
+                rolRepository.save(rol);
+            }
+        }
+    }
+
+    private Set<Permiso> extraerPermisos(Map<String, List<String[]>> permisosPorModulo,
+                                         Map<String, Permiso> permisoMap,
+                                         List<String> modulos) {
+        return extraerPermisos(permisosPorModulo, permisoMap, modulos, List.of());
+    }
+
+    private Set<Permiso> extraerPermisos(Map<String, List<String[]>> permisosPorModulo,
+                                         Map<String, Permiso> permisoMap,
+                                         List<String> modulos,
+                                         List<String> claves) {
+        Set<Permiso> result = new HashSet<>();
+        for (var entry : permisosPorModulo.entrySet()) {
+            if (modulos.contains(entry.getKey())) {
+                for (String[] perm : entry.getValue()) {
+                    Permiso p = permisoMap.get(perm[0]);
+                    if (p != null) result.add(p);
+                }
+            }
+        }
+        for (String clave : claves) {
+            Permiso p = permisoMap.get(clave);
+            if (p != null) result.add(p);
+        }
+        return result;
+    }
+
+    private void migrarPersonasRol() {
+        List<Persona> pendientes = personaRepository.findPendientesMigracionRol();
+        if (pendientes.isEmpty()) return;
+
+        Rol rol = rolRepository.findByNombreIgnoreCase("USUARIO").orElse(null);
+        if (rol == null) return;
+
+        for (Persona persona : pendientes) {
+            persona.setRol(rol);
+            personaRepository.save(persona);
+        }
+    }
+
+    private void seedAdminInicial() {
+        if (personaRepository.count() > 0) return;
+        if (!rolRepository.existsByNombreIgnoreCase("ADMINISTRADOR")) return;
+
+        Rol admin = rolRepository.findByNombreIgnoreCase("ADMINISTRADOR").orElse(null);
+        if (admin == null) return;
+
+        Persona persona = Persona.builder()
+                .nombre("Administrador")
+                .apellido("Sistema")
+                .usuario("admin")
+                .password(passwordEncoder.encode("admin123"))
+                .rol(admin)
+                .activa(true)
+                .build();
+        personaRepository.save(persona);
+    }
+
+    private Map<String, List<String[]>> buildCatalogo() {
+        Map<String, List<String[]>> map = new LinkedHashMap<>();
+        map.put("VENTAS", List.of(
+                new String[]{"VENTAS_VER", "Ver Ventas"},
+                new String[]{"VENTAS_CREAR", "Crear Ventas"},
+                new String[]{"VENTAS_CANCELAR", "Cancelar Ventas"},
+                new String[]{"VENTAS_EDITAR_PRECIO", "Editar Precio de Venta"}
+        ));
+        map.put("CANCELACIONES", List.of(
+                new String[]{"CANCELACIONES_VER", "Ver Cancelaciones"},
+                new String[]{"CANCELACIONES_AUTORIZAR", "Autorizar Cancelaciones"}
+        ));
+        map.put("AUTORIZACIONES", List.<String[]>of(
+                new String[]{"AUTORIZACIONES_VER", "Ver Autorizaciones"}
+        ));
+        map.put("HISTORIAL_VENTAS", List.<String[]>of(
+                new String[]{"HISTORIAL_VENTAS_VER", "Ver Historial de Ventas"}
+        ));
+        map.put("GASTOS", List.of(
+                new String[]{"GASTOS_VER", "Ver Gastos"},
+                new String[]{"GASTOS_CREAR", "Solicitar Gastos"},
+                new String[]{"GASTOS_AUTORIZAR", "Autorizar Gastos"},
+                new String[]{"GASTOS_RECHAZAR", "Rechazar Gastos"}
+        ));
+        map.put("COTIZACIONES", List.of(
+                new String[]{"COTIZACIONES_VER", "Ver Cotizaciones"},
+                new String[]{"COTIZACIONES_CREAR", "Crear Cotizaciones"},
+                new String[]{"COTIZACIONES_CANCELAR", "Cancelar Cotizaciones"},
+                new String[]{"COTIZACIONES_CONVERTIR", "Convertir a Venta"}
+        ));
+        map.put("CORTES", List.of(
+                new String[]{"CORTES_VER", "Ver Cortes"},
+                new String[]{"CORTES_EDITAR", "Editar Cortes"}
+        ));
+        map.put("PRODUCTOS", List.of(
+                new String[]{"PRODUCTOS_VER", "Ver Productos"},
+                new String[]{"PRODUCTOS_CREAR", "Crear Productos"},
+                new String[]{"PRODUCTOS_EDITAR", "Editar Productos"},
+                new String[]{"PRODUCTOS_ELIMINAR", "Eliminar Productos"},
+                new String[]{"PRODUCTOS_MOVIMIENTO", "Movimientos de Stock"}
+        ));
+        map.put("RECEPCIONES", List.of(
+                new String[]{"RECEPCIONES_VER", "Ver Recepciones"},
+                new String[]{"RECEPCIONES_CREAR", "Crear Recepciones"},
+                new String[]{"RECEPCIONES_ELIMINAR", "Eliminar Recepciones"}
+        ));
+        map.put("MOVIMIENTOS_INVENTARIO", List.<String[]>of(
+                new String[]{"MOVIMIENTOS_INVENTARIO_VER", "Ver Movimientos de Inventario"}
+        ));
+        map.put("CLIENTES", List.of(
+                new String[]{"CLIENTES_VER", "Ver Clientes"},
+                new String[]{"CLIENTES_CREAR", "Crear Clientes"},
+                new String[]{"CLIENTES_EDITAR", "Editar Clientes"},
+                new String[]{"CLIENTES_ELIMINAR", "Eliminar Clientes"}
+        ));
+        map.put("CREDITOS", List.of(
+                new String[]{"CREDITOS_VER", "Ver Creditos"},
+                new String[]{"CREDITOS_ABONAR", "Registrar Abonos"}
+        ));
+        map.put("SUCURSALES", List.of(
+                new String[]{"SUCURSALES_VER", "Ver Sucursales"},
+                new String[]{"SUCURSALES_CREAR", "Crear Sucursales"},
+                new String[]{"SUCURSALES_EDITAR", "Editar Sucursales"},
+                new String[]{"SUCURSALES_ELIMINAR", "Eliminar Sucursales"}
+        ));
+        map.put("TIPOS_PAGO", List.of(
+                new String[]{"TIPOS_PAGO_VER", "Ver Tipos de Pago"},
+                new String[]{"TIPOS_PAGO_CREAR", "Crear Tipos de Pago"},
+                new String[]{"TIPOS_PAGO_EDITAR", "Editar Tipos de Pago"},
+                new String[]{"TIPOS_PAGO_ELIMINAR", "Eliminar Tipos de Pago"}
+        ));
+        map.put("CATEGORIAS", List.of(
+                new String[]{"CATEGORIAS_VER", "Ver Categorias"},
+                new String[]{"CATEGORIAS_CREAR", "Crear Categorias"},
+                new String[]{"CATEGORIAS_EDITAR", "Editar Categorias"},
+                new String[]{"CATEGORIAS_ELIMINAR", "Eliminar Categorias"}
+        ));
+        map.put("PROVEEDORES", List.of(
+                new String[]{"PROVEEDORES_VER", "Ver Proveedores"},
+                new String[]{"PROVEEDORES_CREAR", "Crear Proveedores"},
+                new String[]{"PROVEEDORES_EDITAR", "Editar Proveedores"},
+                new String[]{"PROVEEDORES_ELIMINAR", "Eliminar Proveedores"}
+        ));
+        map.put("KARDEX", List.<String[]>of(
+                new String[]{"KARDEX_VER", "Ver Kardex"}
+        ));
+        map.put("PERSONAS", List.of(
+                new String[]{"PERSONAS_VER", "Ver Usuarios"},
+                new String[]{"PERSONAS_CREAR", "Crear Usuarios"},
+                new String[]{"PERSONAS_EDITAR", "Editar Usuarios"},
+                new String[]{"PERSONAS_ELIMINAR", "Eliminar Usuarios"}
+        ));
+        map.put("CAJAS", List.of(
+                new String[]{"CAJAS_VER", "Ver Cajas"},
+                new String[]{"CAJAS_CREAR", "Crear Cajas"},
+                new String[]{"CAJAS_EDITAR", "Editar Cajas"},
+                new String[]{"CAJAS_ELIMINAR", "Eliminar Cajas"},
+                new String[]{"CAJAS_APERTURA", "Abrir Cajas"},
+                new String[]{"CAJAS_CIERRE", "Cerrar Cajas"},
+                new String[]{"CAJAS_MOVIMIENTO", "Movimientos de Caja"},
+                new String[]{"CAJAS_CORTE", "Realizar Cortes de Caja"}
+        ));
+        map.put("PROMOCIONES", List.of(
+                new String[]{"PROMOCIONES_VER", "Ver Promociones"},
+                new String[]{"PROMOCIONES_CREAR", "Crear Promociones"},
+                new String[]{"PROMOCIONES_EDITAR", "Editar Promociones"},
+                new String[]{"PROMOCIONES_ELIMINAR", "Eliminar Promociones"}
+        ));
+        map.put("CONFIGURACION", List.of(
+                new String[]{"CONFIGURACION_VER", "Ver Configuracion"},
+                new String[]{"CONFIGURACION_EDITAR", "Editar Configuracion"}
+        ));
+        map.put("AUDITORIAS", List.<String[]>of(
+                new String[]{"AUDITORIAS_VER", "Ver Auditorias"}
+        ));
+        map.put("ROLES", List.of(
+                new String[]{"ROLES_VER", "Ver Roles"},
+                new String[]{"ROLES_CREAR", "Crear Roles"},
+                new String[]{"ROLES_EDITAR", "Editar Roles"},
+                new String[]{"ROLES_ELIMINAR", "Eliminar Roles"}
+        ));
+        return map;
+    }
+}

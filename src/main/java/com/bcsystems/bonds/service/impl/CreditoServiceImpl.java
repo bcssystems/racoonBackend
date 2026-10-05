@@ -1,0 +1,382 @@
+package com.bcsystems.bonds.service.impl;
+
+import com.bcsystems.bonds.domain.*;
+import com.bcsystems.bonds.domain.en.*;
+import com.bcsystems.bonds.dto.*;
+import com.bcsystems.bonds.exception.InvalidEntryException;
+import com.bcsystems.bonds.exception.NotFoundException;
+import com.bcsystems.bonds.repository.*;
+import com.bcsystems.bonds.service.CreditoService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class CreditoServiceImpl implements CreditoService {
+
+    private final CreditoRepository creditoRepository;
+    private final MovimientoCreditoRepository movimientoCreditoRepository;
+    private final AbonoRepository abonoRepository;
+    private final AbonoPagoRepository abonoPagoRepository;
+    private final ClienteRepository clienteRepository;
+    private final PersonaRepository personaRepository;
+    private final TipoPagoRepository tipoPagoRepository;
+    private final com.bcsystems.bonds.service.ConfiguracionService configuracionService;
+    private final ClienteIneRepository clienteIneRepository;
+    private final CajaRepository cajaRepository;
+    private final MovimientoCajaRepository movimientoCajaRepository;
+
+    @Override
+    public List<CreditoResponse> listarCreditosPorCliente(Integer idCliente) {
+        return creditoRepository.findByClienteIdClienteOrderByFechaCreacionDesc(idCliente)
+                .stream().map(this::toCreditoResponse).toList();
+    }
+
+    @Override
+    public List<MovimientoCreditoResponse> listarMovimientosPorCliente(Integer idCliente) {
+        return movimientoCreditoRepository.findByCreditoClienteIdClienteOrderByFechaDesc(idCliente)
+                .stream().map(this::toMovimientoResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public AbonoResponse registrarAbono(AbonoRequest request) {
+        Credito credito = creditoRepository.findById(request.idCredito())
+                .orElseThrow(() -> new NotFoundException("Credito no encontrado"));
+
+        if (credito.getEstado() != EstadoCredito.ACTIVO) {
+            throw new InvalidEntryException("El credito no esta activo");
+        }
+
+        if (request.monto() <= 0) {
+            throw new InvalidEntryException("El monto debe ser mayor a cero");
+        }
+
+        if (request.monto() > credito.getSaldoPendiente()) {
+            throw new InvalidEntryException("El monto excede el saldo pendiente ($" + String.format("%.2f", credito.getSaldoPendiente()) + ")");
+        }
+
+        Persona usuario = obtenerPersonaActual();
+        TipoAbono tipo = "LIQUIDACION".equals(request.tipo()) ? TipoAbono.LIQUIDACION : TipoAbono.PARCIAL;
+        List<TipoPago> tiposPago = resolverTiposPago(request.pagos(), request.idTipoPago());
+        Caja caja = resolverCaja(request.idCaja());
+
+        double saldoAnterior = credito.getSaldoPendiente();
+        double saldoNuevo = saldoAnterior - request.monto();
+
+        Abono abono = Abono.builder()
+                .credito(credito)
+                .monto(request.monto())
+                .tipo(tipo)
+                .fecha(LocalDateTime.now())
+                .usuario(usuario)
+                .tipoPago(tiposPago.isEmpty() ? null : tiposPago.get(0))
+                .caja(caja)
+                .build();
+        abono = abonoRepository.save(abono);
+
+        guardarPagos(abono, request.pagos(), request.idTipoPago());
+
+        registrarIngresoCajaAbono(caja, abono, usuario);
+
+        TipoMovimientoCredito tipoMov = tipo == TipoAbono.LIQUIDACION ? TipoMovimientoCredito.LIQUIDACION : TipoMovimientoCredito.ABONO;
+
+        MovimientoCredito mov = MovimientoCredito.builder()
+                .credito(credito)
+                .tipo(tipoMov)
+                .monto(request.monto())
+                .saldoAnterior(saldoAnterior)
+                .saldoNuevo(saldoNuevo)
+                .descripcion(tipo == TipoAbono.LIQUIDACION ? "Liquidacion total" : "Abono parcial")
+                .fecha(LocalDateTime.now())
+                .usuario(usuario)
+                .tipoPago(tiposPago.isEmpty() ? null : tiposPago.get(0))
+                .build();
+        movimientoCreditoRepository.save(mov);
+
+        credito.setSaldoPendiente(saldoNuevo);
+        if (tipo == TipoAbono.LIQUIDACION || saldoNuevo <= 0) {
+            credito.setEstado(EstadoCredito.PAGADO);
+        }
+        creditoRepository.save(credito);
+
+        // Update cliente saldoActual
+        Cliente cliente = credito.getCliente();
+        cliente.setSaldoActual(cliente.getSaldoActual() - request.monto());
+        clienteRepository.save(cliente);
+
+        return toAbonoResponse(abono, usuario);
+    }
+
+    @Override
+    @Transactional
+    public List<AbonoResponse> abonarATodas(AbonoGeneralRequest request) {
+        Cliente cliente = clienteRepository.findById(request.idCliente())
+                .orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
+
+        List<Credito> activos = creditoRepository.findByClienteIdClienteAndEstadoOrderByFechaCreacionDesc(
+                request.idCliente(), EstadoCredito.ACTIVO);
+
+        if (activos.isEmpty()) {
+            throw new InvalidEntryException("El cliente no tiene creditos activos");
+        }
+
+        double totalDeuda = activos.stream().mapToDouble(Credito::getSaldoPendiente).sum();
+        if (request.monto() > totalDeuda) {
+            throw new InvalidEntryException("El monto ($" + String.format("%.2f", request.monto())
+                    + ") excede la deuda total ($" + String.format("%.2f", totalDeuda) + ")");
+        }
+
+        Persona usuario = obtenerPersonaActual();
+        List<TipoPago> tiposPago = resolverTiposPago(request.pagos(), request.idTipoPago());
+        Caja caja = resolverCaja(request.idCaja());
+        List<AbonoResponse> resultados = new ArrayList<>();
+
+        for (Credito credito : activos) {
+            double proporcion = credito.getSaldoPendiente() / totalDeuda;
+            double montoAbono = Math.round(request.monto() * proporcion * 100.0) / 100.0;
+            if (montoAbono <= 0) continue;
+            if (montoAbono > credito.getSaldoPendiente()) {
+                montoAbono = credito.getSaldoPendiente();
+            }
+
+            double saldoAnterior = credito.getSaldoPendiente();
+            double saldoNuevo = saldoAnterior - montoAbono;
+
+            TipoAbono tipo = saldoNuevo <= 0 ? TipoAbono.LIQUIDACION : TipoAbono.PARCIAL;
+
+            Abono abono = Abono.builder()
+                    .credito(credito)
+                    .monto(montoAbono)
+                    .tipo(tipo)
+                    .fecha(LocalDateTime.now())
+                    .usuario(usuario)
+                    .tipoPago(tiposPago.isEmpty() ? null : tiposPago.get(0))
+                    .caja(caja)
+                    .build();
+            abono = abonoRepository.save(abono);
+
+            guardarPagosProporcional(abono, request.pagos(), request.idTipoPago(), montoAbono, request.monto());
+
+            registrarIngresoCajaAbono(caja, abono, usuario);
+
+            TipoMovimientoCredito tipoMov = tipo == TipoAbono.LIQUIDACION ? TipoMovimientoCredito.LIQUIDACION : TipoMovimientoCredito.ABONO;
+
+            MovimientoCredito mov = MovimientoCredito.builder()
+                    .credito(credito)
+                    .tipo(tipoMov)
+                    .monto(montoAbono)
+                    .saldoAnterior(saldoAnterior)
+                    .saldoNuevo(saldoNuevo)
+                    .descripcion("Abono general - distribucion proporcional")
+                    .fecha(LocalDateTime.now())
+                    .usuario(usuario)
+                    .tipoPago(tiposPago.isEmpty() ? null : tiposPago.get(0))
+                    .build();
+            movimientoCreditoRepository.save(mov);
+
+            credito.setSaldoPendiente(saldoNuevo);
+            if (tipo == TipoAbono.LIQUIDACION || saldoNuevo <= 0) {
+                credito.setEstado(EstadoCredito.PAGADO);
+            }
+            creditoRepository.save(credito);
+
+            resultados.add(toAbonoResponse(abono, usuario));
+        }
+
+        // Update cliente saldoActual
+        cliente.setSaldoActual(cliente.getSaldoActual() - request.monto());
+        clienteRepository.save(cliente);
+
+        return resultados;
+    }
+
+    @Override
+    public EstadoCuentaResponse estadoCuenta(Integer idCredito) {
+        Credito credito = creditoRepository.findById(idCredito)
+                .orElseThrow(() -> new NotFoundException("Credito no encontrado"));
+
+        List<AbonoResponse> abonos = abonoRepository.findByCreditoIdCreditoOrderByFechaDesc(idCredito).stream()
+                .map(a -> toAbonoResponse(a, a.getUsuario()))
+                .toList();
+
+        List<MovimientoCreditoResponse> movimientos = movimientoCreditoRepository
+                .findByCreditoIdCreditoOrderByFechaDesc(idCredito).stream()
+                .map(this::toMovimientoResponse).toList();
+
+        Cliente c = credito.getCliente();
+        boolean tieneIne = clienteIneRepository.findByClienteIdCliente(c.getIdCliente()).isPresent();
+        ClienteResponse clienteResponse = new ClienteResponse(
+                c.getIdCliente(), c.getNombre(), c.getApellidoPaterno(), c.getApellidoMaterno(),
+                c.getTelefono(), c.getCodigoPais(), c.getWhatsapp(), c.getEmpresa(),
+                c.getRegimenFiscal(), c.getCp(), c.getDireccion(),
+                c.getCalle(), c.getNumExt(), c.getNumInt(), c.getColonia(),
+                c.getMunicipio(), c.getEstado(),
+                c.getRfc(), c.getRepresentanteLegal(), c.getDireccionEntrega(),
+                c.getActivo(), c.getFechaRegistro(),
+                c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(),
+                c.getEnListaNegra(), c.getFechaListaNegra(), c.getMotivoListaNegra(),
+                tieneIne);
+
+        String titular = configuracionService.getValor("titularPagare", "PRISCILA ARONG KIM LOPEZ");
+        double tasaMora = configuracionService.getValorDouble("tasaInteresMoraPagare", 5.0);
+
+        return new EstadoCuentaResponse(
+                toCreditoResponse(credito), clienteResponse,
+                abonos, movimientos, titular, tasaMora);
+    }
+
+    private Persona obtenerPersonaActual() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return personaRepository.findByUsuario(username)
+                .orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+    }
+
+    private CreditoResponse toCreditoResponse(Credito c) {
+        return new CreditoResponse(
+                c.getIdCredito(), c.getVenta().getIdVenta(),
+                c.getVenta().getIdVenta(),
+                c.getFolio(),
+                c.getCliente().getIdCliente(),
+                c.getCliente().getNombre() + " " + c.getCliente().getApellidoPaterno(),
+                c.getMontoOriginal(), c.getSaldoPendiente(),
+                c.getPlazoMeses(), c.getPorcentajeInteres(),
+                c.getFechaVencimiento(), c.getEstado(), c.getFechaCreacion(),
+                c.getVenta().getNota());
+    }
+
+    private MovimientoCreditoResponse toMovimientoResponse(MovimientoCredito m) {
+        return new MovimientoCreditoResponse(
+                m.getIdMovimiento(), m.getCredito().getIdCredito(),
+                m.getTipo(), m.getMonto(),
+                m.getSaldoAnterior(), m.getSaldoNuevo(),
+                m.getDescripcion(), m.getFecha(),
+                m.getUsuario().getUsuario(),
+                m.getTipoPago() != null ? m.getTipoPago().getNombre() : null);
+    }
+
+    private TipoPago resolverTipoPago(Integer idTipoPago) {
+        if (idTipoPago == null) {
+            return null;
+        }
+        return tipoPagoRepository.findById(idTipoPago)
+                .orElseThrow(() -> new NotFoundException("Tipo de pago no encontrado"));
+    }
+
+    private List<TipoPago> resolverTiposPago(List<AbonoPagoRequest> pagos, Integer idTipoPagoLegacy) {
+        if (pagos == null || pagos.isEmpty()) {
+            List<TipoPago> lista = new ArrayList<>();
+            if (idTipoPagoLegacy != null) {
+                lista.add(resolverTipoPago(idTipoPagoLegacy));
+            }
+            return lista;
+        }
+        double suma = pagos.stream().mapToDouble(p -> p.monto() != null ? p.monto() : 0.0).sum();
+        if (Math.abs(suma - 0.0) < 0.000001) {
+            throw new InvalidEntryException("El abono requiere al menos un pago con monto mayor a cero");
+        }
+        return pagos.stream().map(p -> resolverTipoPago(p.idTipoPago())).toList();
+    }
+
+    private List<AbonoPago> guardarPagos(Abono abono, List<AbonoPagoRequest> pagos, Integer idTipoPagoLegacy) {
+        List<AbonoPago> guardados = new ArrayList<>();
+        if (pagos == null || pagos.isEmpty()) {
+            if (idTipoPagoLegacy != null) {
+                guardados.add(abonoPagoRepository.save(AbonoPago.builder()
+                        .abono(abono)
+                        .tipoPago(resolverTipoPago(idTipoPagoLegacy))
+                        .monto(abono.getMonto())
+                        .build()));
+            }
+            return guardados;
+        }
+        double sumaPagos = pagos.stream().mapToDouble(p -> p.monto() != null ? p.monto() : 0.0).sum();
+        if (Math.abs(sumaPagos - abono.getMonto()) > 0.01) {
+            throw new InvalidEntryException("La suma de las formas de pago debe ser igual al monto del abono");
+        }
+        for (AbonoPagoRequest p : pagos) {
+            if (p.monto() == null || p.monto() <= 0) continue;
+            guardados.add(abonoPagoRepository.save(AbonoPago.builder()
+                    .abono(abono)
+                    .tipoPago(resolverTipoPago(p.idTipoPago()))
+                    .monto(p.monto())
+                    .referencia(p.referencia())
+                    .build()));
+        }
+        return guardados;
+    }
+
+    private void guardarPagosProporcional(Abono abono, List<AbonoPagoRequest> pagos,
+                                          Integer idTipoPagoLegacy, double montoAbono, double montoTotal) {
+        if (pagos == null || pagos.isEmpty()) {
+            if (idTipoPagoLegacy != null) {
+                abonoPagoRepository.save(AbonoPago.builder()
+                        .abono(abono)
+                        .tipoPago(resolverTipoPago(idTipoPagoLegacy))
+                        .monto(montoAbono)
+                        .build());
+            }
+            return;
+        }
+        for (AbonoPagoRequest p : pagos) {
+            if (p.monto() == null || p.monto() <= 0) continue;
+            double montoProp = Math.round(p.monto() * montoAbono / montoTotal * 100.0) / 100.0;
+            if (montoProp <= 0) continue;
+            abonoPagoRepository.save(AbonoPago.builder()
+                    .abono(abono)
+                    .tipoPago(resolverTipoPago(p.idTipoPago()))
+                    .monto(montoProp)
+                    .referencia(p.referencia())
+                    .build());
+        }
+    }
+
+    private AbonoResponse toAbonoResponse(Abono a, Persona usuario) {
+        return new AbonoResponse(
+                a.getIdAbono(), a.getCredito().getIdCredito(),
+                a.getMonto(), a.getTipo().name(),
+                a.getFecha(), usuario != null ? usuario.getUsuario() : a.getUsuario().getUsuario(),
+                a.getTipoPago() != null ? a.getTipoPago().getNombre() : null,
+                abonoPagoRepository.findByAbonoIdAbono(a.getIdAbono()).stream()
+                        .map(p -> new AbonoPagoResponse(
+                                p.getIdAbonoPago(),
+                                p.getTipoPago().getIdTipoPago(),
+                                p.getTipoPago().getNombre(),
+                                p.getMonto(),
+                                p.getReferencia()))
+                        .toList());
+    }
+
+    private Caja resolverCaja(Integer idCaja) {
+        if (idCaja == null) {
+            return null;
+        }
+        return cajaRepository.findById(idCaja)
+                .orElseThrow(() -> new NotFoundException("Caja no encontrada"));
+    }
+
+    private void registrarIngresoCajaAbono(Caja caja, Abono abono, Persona usuario) {
+        if (caja == null) {
+            return;
+        }
+        if (caja.getEstado() != CajaEstado.ABIERTA) {
+            throw new InvalidEntryException("La caja no está abierta");
+        }
+        movimientoCajaRepository.save(MovimientoCaja.builder()
+                .caja(caja)
+                .tipo(TipoMovimientoCaja.INGRESO)
+                .monto(abono.getMonto())
+                .motivo("Abono a credito #" + abono.getCredito().getIdCredito())
+                .usuario(usuario)
+                .fecha(LocalDateTime.now())
+                .build());
+        caja.setSaldoActual(caja.getSaldoActual() + abono.getMonto());
+        cajaRepository.save(caja);
+    }
+}

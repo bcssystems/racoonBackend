@@ -1,0 +1,98 @@
+package com.bcsystems.bonds.domain;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.envers.Audited;
+
+import java.time.LocalDateTime;
+
+@Audited
+@Entity
+@Getter
+@Setter
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@Table(name = "cliente")
+public class Cliente {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer idCliente;
+
+    @Column(nullable = false, length = 100)
+    private String nombre;
+
+    @Column(nullable = false, length = 100)
+    private String apellidoPaterno;
+
+    @Column(length = 100)
+    private String apellidoMaterno;
+
+    @Column(nullable = false, length = 20)
+    private String telefono;
+
+    @Column(nullable = false, length = 5)
+    private String codigoPais;
+
+    @Column(length = 20)
+    private String whatsapp;
+
+    @Column(length = 200)
+    private String empresa;
+
+    @Column(nullable = false, length = 50)
+    private String regimenFiscal;
+
+    @Column(length = 10)
+    private String cp;
+
+    @Column(length = 500)
+    private String direccion;
+
+    @Column(length = 200)
+    private String calle;
+
+    @Column(length = 20)
+    private String numExt;
+
+    @Column(length = 20)
+    private String numInt;
+
+    @Column(length = 150)
+    private String colonia;
+
+    @Column(length = 150)
+    private String municipio;
+
+    @Column(length = 100)
+    private String estado;
+
+    @Column(length = 13)
+    private String rfc;
+
+    @Column(length = 150)
+    private String representanteLegal;
+
+    @Column(length = 500)
+    private String direccionEntrega;
+
+    private Boolean tieneCredito;
+
+    private Double limiteCredito;
+
+    private Double saldoActual;
+
+    private Boolean enListaNegra;
+
+    private LocalDateTime fechaListaNegra;
+
+    @Column(length = 300)
+    private String motivoListaNegra;
+
+    @Column(nullable = false)
+    private Boolean activo;
+
+    @Column(updatable = false)
+    private LocalDateTime fechaRegistro;
+}
