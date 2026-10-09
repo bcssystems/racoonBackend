@@ -342,6 +342,7 @@ public class ProductoServiceImpl implements ProductoService {
         if (!puedeAutorizar) {
             Sucursal sucursalSolicitud = request.idSucursal() == null ? null : sucursalRepository.findById(request.idSucursal())
                     .orElseThrow(() -> new NotFoundException("Sucursal no encontrada"));
+            validarStockDisponible(producto, sucursalSolicitud, request.tipoMovimiento(), request.cantidad());
             MovimientoStock solicitud = MovimientoStock.builder()
                     .producto(producto).sucursal(sucursalSolicitud)
                     .tipoMovimiento(request.tipoMovimiento()).cantidad(request.cantidad())
@@ -543,6 +544,21 @@ public class ProductoServiceImpl implements ProductoService {
         auditoriaService.registrarMovimiento("PRODUCTO", producto.getIdProducto(), movimiento.getTipoMovimiento().name(),
                 obtenerUsuarioActual(), "Movimiento autorizado de " + cantidad + " unidades", movimiento.getReferencia(),
                 cantidad, globalAnterior, globalNuevo);
+    }
+
+    private void validarStockDisponible(Producto producto, Sucursal sucursal, TipoMovimiento tipo, int cantidad) {
+        if (tipo != TipoMovimiento.SALIDA && tipo != TipoMovimiento.MERMA && tipo != TipoMovimiento.RECAMBIO) return;
+        int stock = producto.getStockActual();
+        if (sucursal != null) {
+            stock = inventarioSucursalRepository
+                    .findByProductoIdProductoAndSucursalIdSucursal(producto.getIdProducto(), sucursal.getIdSucursal())
+                    .map(InventarioSucursal::getStock)
+                    .orElse(0);
+        }
+        if (stock < cantidad) {
+            throw new InvalidEntryException((sucursal != null ? "Stock insuficiente en sucursal" : "Stock insuficiente")
+                    + ". Actual: " + stock + ", solicitado: " + cantidad);
+        }
     }
 
     private MovimientoStockResponse movimientoResponse(MovimientoStock m) {
