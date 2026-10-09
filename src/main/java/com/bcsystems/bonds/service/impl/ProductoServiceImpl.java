@@ -353,7 +353,7 @@ public class ProductoServiceImpl implements ProductoService {
                     .estado(EstadoMovimientoStock.PENDIENTE)
                     .build();
             movimientoStockRepository.save(solicitud);
-            auditoriaService.registrar("MOVIMIENTO_STOCK", solicitud.getIdMovimiento(), "SOLICITUD", obtenerUsuarioActual(),
+            auditoriaService.registrar("MOVIMIENTO_STOCK", solicitud.getIdMovimiento(), AccionAuditoria.ACTUALIZACION.name(), obtenerUsuarioActual(),
                     "Solicitud pendiente de " + request.tipoMovimiento() + " de " + request.cantidad() + " unidades");
             return toResponse(producto);
         }
