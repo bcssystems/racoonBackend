@@ -104,8 +104,9 @@ public class DataSeedRunner implements CommandLineRunner {
                 "SUCURSALES_VER",
                 "TIPOS_PAGO_VER",
                 "CATEGORIAS_VER",
-                "PROVEEDORES_VER",
-                "KARDEX_VER",
+                 "PROVEEDORES_VER",
+                 "PRODUCTOS_MOVIMIENTO",
+                 "KARDEX_VER",
                 "MOVIMIENTOS_INVENTARIO_VER",
                 "CANCELACIONES_VER",
                 "PROMOCIONES_VER",
@@ -149,6 +150,13 @@ public class DataSeedRunner implements CommandLineRunner {
                 for (Permiso p : nuevosPermisos) {
                     if (!permisosRol.contains(p)) {
                         permisosRol.add(p);
+                        cambio = true;
+                    }
+                }
+                if (rol.getNombre().equalsIgnoreCase("USUARIO")) {
+                    Permiso movimientoStock = permisoRepository.findByClave("PRODUCTOS_MOVIMIENTO").orElse(null);
+                    if (movimientoStock != null && !permisosRol.contains(movimientoStock)) {
+                        permisosRol.add(movimientoStock);
                         cambio = true;
                     }
                 }
