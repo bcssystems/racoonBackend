@@ -2,6 +2,7 @@ package com.bcsystems.bonds.repository;
 
 import com.bcsystems.bonds.domain.MovimientoStock;
 import com.bcsystems.bonds.domain.en.TipoMovimiento;
+import com.bcsystems.bonds.domain.en.EstadoMovimientoStock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,6 +17,9 @@ import java.util.List;
 
 @Repository
 public interface MovimientoStockRepository extends JpaRepository<MovimientoStock, Integer> {
+    @Query("SELECT m FROM MovimientoStock m WHERE m.estado = :estado ORDER BY m.fechaMovimiento DESC")
+    Page<MovimientoStock> buscarPorEstado(@Param("estado") EstadoMovimientoStock estado, Pageable pageable);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from MovimientoStock m where m.idMovimiento = :id")
     java.util.Optional<MovimientoStock> findByIdForUpdate(@Param("id") Integer id);

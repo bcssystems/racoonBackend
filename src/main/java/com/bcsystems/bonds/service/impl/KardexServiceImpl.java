@@ -3,6 +3,7 @@ package com.bcsystems.bonds.service.impl;
 import com.bcsystems.bonds.domain.Auditoria;
 import com.bcsystems.bonds.domain.MovimientoStock;
 import com.bcsystems.bonds.domain.en.TipoMovimiento;
+import com.bcsystems.bonds.domain.en.EstadoMovimientoStock;
 import com.bcsystems.bonds.dto.KardexUnificadoResponse;
 import com.bcsystems.bonds.dto.MovimientoStockResponse;
 import com.bcsystems.bonds.repository.AuditoriaRepository;
@@ -55,6 +56,30 @@ public class KardexServiceImpl implements KardexService {
                         m.getCostoTotal(),
                         m.getFechaMovimiento(),
                         m.getEstado() != null ? m.getEstado().name() : "APROBADO"
+                ));
+    }
+
+    @Override
+    public Page<MovimientoStockResponse> listarPendientes(Pageable pageable) {
+        return movimientoStockRepository.buscarPorEstado(EstadoMovimientoStock.PENDIENTE, pageable)
+                .map(m -> new MovimientoStockResponse(
+                        m.getIdMovimiento(),
+                        m.getProducto().getIdProducto(),
+                        m.getProducto().getSku(),
+                        m.getProducto().getNombre(),
+                        m.getSucursal() != null ? m.getSucursal().getIdSucursal() : null,
+                        m.getSucursal() != null ? m.getSucursal().getNombre() : "Global",
+                        m.getTipoMovimiento().name(),
+                        m.getCantidad(),
+                        m.getStockAnterior(),
+                        m.getStockNuevo(),
+                        m.getReferencia(),
+                        m.getUsuario(),
+                        m.getObservacion(),
+                        m.getCostoUnitario(),
+                        m.getCostoTotal(),
+                        m.getFechaMovimiento(),
+                        m.getEstado().name()
                 ));
     }
 

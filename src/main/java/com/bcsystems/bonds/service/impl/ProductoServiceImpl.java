@@ -473,6 +473,16 @@ public class ProductoServiceImpl implements ProductoService {
         if (movimiento.getEstado() != EstadoMovimientoStock.PENDIENTE) {
             throw new InvalidEntryException("El movimiento ya fue procesado");
         }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean puedeAutorizar = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("PRODUCTOS_MOVIMIENTO_AUTORIZAR"));
+        if (!puedeAutorizar && (request == null || request.codigoAutorizacion() == null
+                || request.codigoAutorizacion().isBlank())) {
+            throw new InvalidEntryException("Ingresa el código de autorización del administrador");
+        }
+        if (movimiento.getCodigoAutorizacion() == null && !puedeAutorizar) {
+            throw new InvalidEntryException("No hay código generado. Pídele al administrador generarlo");
+        }
         if (movimiento.getCodigoAutorizacion() != null) {
             if (request == null || request.codigoAutorizacion() == null
                     || !request.codigoAutorizacion().trim().equals(movimiento.getCodigoAutorizacion())) {

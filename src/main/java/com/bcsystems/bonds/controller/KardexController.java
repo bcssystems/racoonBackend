@@ -37,6 +37,13 @@ public class KardexController {
         return ResponseEntity.ok(kardexService.listarMovimientos(idProducto, idSucursal, tipo, fechaInicio, fechaFin, pageable));
     }
 
+    @GetMapping("/pendientes")
+    @PreAuthorize("hasAnyAuthority('MOVIMIENTOS_INVENTARIO_VER','MOVIMIENTOS_INVENTARIO_AUTORIZAR')")
+    public ResponseEntity<Page<MovimientoStockResponse>> listarPendientes(
+            @PageableDefault(size = 200, sort = "fechaMovimiento", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(kardexService.listarPendientes(pageable));
+    }
+
     @GetMapping("/todo")
     @PreAuthorize("hasAnyAuthority('KARDEX_VER','MOVIMIENTOS_INVENTARIO_VER')")
     public ResponseEntity<Page<KardexUnificadoResponse>> listarTodo(

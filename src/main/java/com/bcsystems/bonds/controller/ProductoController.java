@@ -119,7 +119,7 @@ public class ProductoController {
     }
 
     @PostMapping("/movimientos/{idMovimiento}/aprobar")
-    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
+    @PreAuthorize("hasAnyAuthority('PRODUCTOS_MOVIMIENTO','PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
     public ResponseEntity<ProductoResponse> aprobarMovimiento(@PathVariable Integer idMovimiento,
                                                                @RequestBody(required = false) MovimientoAutorizacionRequest request) {
         return ResponseEntity.ok(productoService.aprobarMovimiento(idMovimiento,
