@@ -15,6 +15,9 @@ public interface ProductoService {
     ProductoResponse actualizarStockSucursal(Integer idProducto, Integer idSucursal, Integer nuevoStock);
     ProductoResponse registrarMovimientoStock(Integer idProducto, MovimientoStockRequest request);
     ProductoResponse transferirStock(Integer idProducto, TransferenciaRequest request);
+    CodigoMovimientoResponse generarCodigoMovimiento(Integer idMovimiento);
+    ProductoResponse aprobarMovimiento(Integer idMovimiento, MovimientoAutorizacionRequest request);
+    MovimientoStockResponse rechazarMovimiento(Integer idMovimiento);
     ProductoStats obtenerStats();
     java.util.List<java.util.Map<String, Object>> costoPorSucursal();
 

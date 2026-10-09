@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 
 import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
@@ -18,6 +20,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +33,9 @@ public class ConfiguracionServiceImpl implements ConfiguracionService {
     private final ConfiguracionRepository configuracionRepository;
     private final AuditoriaService auditoriaService;
 
+    @Value("${app.upload.dir:./uploads/multimedia}")
+    private String uploadDir;
+
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
             Map.entry("fondoCajas", "2000"),
             Map.entry("tasaInteresMoraPagare", "5"),
@@ -33,6 +43,9 @@ public class ConfiguracionServiceImpl implements ConfiguracionService {
             Map.entry("titularPagare", "PRISCILA ARONG KIM LOPEZ"),
             Map.entry("descripcionEmpresa", "PRISCILA ARONG KIM LOPEZ / BONDS"),
             Map.entry("direccionEmpresa", "")
+            ,Map.entry("logoTicket", "")
+            ,Map.entry("encabezadoTicket", "")
+            ,Map.entry("pieTicket", "")
     );
 
     private static final Map<String, String> DESCRIPCIONES = Map.ofEntries(
@@ -42,6 +55,9 @@ public class ConfiguracionServiceImpl implements ConfiguracionService {
             Map.entry("titularPagare", "Nombre del titular que se imprime en el pagare"),
             Map.entry("descripcionEmpresa", "Nombre/datos de la empresa en tickets y documentos"),
             Map.entry("direccionEmpresa", "Direccion de la empresa en tickets y documentos")
+            ,Map.entry("logoTicket", "Logo usado en tickets")
+            ,Map.entry("encabezadoTicket", "Texto adicional del encabezado del ticket")
+            ,Map.entry("pieTicket", "Texto del pie del ticket")
     );
 
     @PostConstruct
@@ -115,6 +131,33 @@ public class ConfiguracionServiceImpl implements ConfiguracionService {
                 "ACTUALIZACION", usuario, clave + " = " + request.valor());
 
         return toResponse(config);
+    }
+
+    @Override
+    @Transactional
+    public ConfiguracionResponse actualizarLogo(MultipartFile archivo) {
+        if (archivo == null || archivo.isEmpty()) throw new IllegalArgumentException("Debe proporcionar un logo");
+        try {
+            Path dir = Paths.get(uploadDir);
+            Files.createDirectories(dir);
+            Configuracion config = configuracionRepository.findByClave("logoTicket").orElseGet(() -> crearPorDefecto("logoTicket"));
+            if (config.getValor() != null && config.getValor().startsWith("/uploads/")) {
+                Files.deleteIfExists(dir.resolve(config.getValor().substring("/uploads/".length())));
+            }
+            String nombre = UUID.randomUUID() + "-ticket" + extension(archivo.getOriginalFilename());
+            Files.copy(archivo.getInputStream(), dir.resolve(nombre), StandardCopyOption.REPLACE_EXISTING);
+            config.setValor("/uploads/" + nombre);
+            config.setActualizadaEn(LocalDateTime.now());
+            return toResponse(configuracionRepository.save(config));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("No se pudo guardar el logo", e);
+        }
+    }
+
+    private String extension(String nombre) {
+        if (nombre == null) return ".bin";
+        int punto = nombre.lastIndexOf('.');
+        return punto >= 0 ? nombre.substring(punto).replaceAll("[^.a-zA-Z0-9]", "") : ".bin";
     }
 
     private Configuracion crearPorDefecto(String clave) {

@@ -91,7 +91,7 @@ public class ProductoController {
     }
 
     @PutMapping("/{idProducto}/inventario-sucursal/{idSucursal}")
-    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO')")
+    @PreAuthorize("hasAnyAuthority('PRODUCTOS_MOVIMIENTO','PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
     public ResponseEntity<ProductoResponse> actualizarStockSucursal(
             @PathVariable Integer idProducto, @PathVariable Integer idSucursal,
             @RequestParam Integer stock) {
@@ -99,16 +99,36 @@ public class ProductoController {
     }
 
     @PostMapping("/{idProducto}/movimiento-stock")
-    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO')")
+    @PreAuthorize("hasAnyAuthority('PRODUCTOS_MOVIMIENTO','PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
     public ResponseEntity<ProductoResponse> registrarMovimiento(
             @PathVariable Integer idProducto, @Valid @RequestBody MovimientoStockRequest request) {
         return ResponseEntity.ok(productoService.registrarMovimientoStock(idProducto, request));
     }
 
     @PostMapping("/{idProducto}/transferir")
-    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO')")
+    @PreAuthorize("hasAnyAuthority('PRODUCTOS_MOVIMIENTO','PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
     public ResponseEntity<ProductoResponse> transferir(
             @PathVariable Integer idProducto, @Valid @RequestBody TransferenciaRequest request) {
         return ResponseEntity.ok(productoService.transferirStock(idProducto, request));
+    }
+
+    @PostMapping("/movimientos/{idMovimiento}/generar-codigo")
+    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
+    public ResponseEntity<CodigoMovimientoResponse> generarCodigoMovimiento(@PathVariable Integer idMovimiento) {
+        return ResponseEntity.ok(productoService.generarCodigoMovimiento(idMovimiento));
+    }
+
+    @PostMapping("/movimientos/{idMovimiento}/aprobar")
+    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
+    public ResponseEntity<ProductoResponse> aprobarMovimiento(@PathVariable Integer idMovimiento,
+                                                               @RequestBody(required = false) MovimientoAutorizacionRequest request) {
+        return ResponseEntity.ok(productoService.aprobarMovimiento(idMovimiento,
+                request != null ? request : new MovimientoAutorizacionRequest(null)));
+    }
+
+    @PostMapping("/movimientos/{idMovimiento}/rechazar")
+    @PreAuthorize("hasAuthority('PRODUCTOS_MOVIMIENTO_AUTORIZAR')")
+    public ResponseEntity<MovimientoStockResponse> rechazarMovimiento(@PathVariable Integer idMovimiento) {
+        return ResponseEntity.ok(productoService.rechazarMovimiento(idMovimiento));
     }
 }

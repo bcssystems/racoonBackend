@@ -88,9 +88,12 @@ public class VentaServiceImpl implements VentaService {
                             ? productoRepository.findById(dto.idProducto()).orElse(null) : null)
                     .descripcion(dto.descripcion())
                     .cantidad(dto.cantidad())
-                    .precioUnitario(dto.precioUnitario())
-                    .subtotal(dto.subtotal())
-                    .atributosText(dto.atributosText())
+                     .precioUnitario(dto.precioUnitario())
+                     .subtotal(dto.subtotal())
+                     .costoUnitario(dto.costoUnitario() != null ? dto.costoUnitario()
+                             : (dto.idProducto() != null && productoRepository.findById(dto.idProducto()).isPresent()
+                             ? productoRepository.findById(dto.idProducto()).orElseThrow().getCostoPromedio() : null))
+                     .atributosText(dto.atributosText())
                     .build();
 
             if (detalle.getProducto() != null && detalle.getProducto().getCostoPromedio() != null
@@ -146,13 +149,23 @@ public class VentaServiceImpl implements VentaService {
 
         if (request.pagos() != null && !request.pagos().isEmpty()) {
             double sumaPagos = request.pagos().stream().mapToDouble(VentaPagoRequest::monto).sum();
-            if (sumaPagos + 0.01 < request.total()) {
+            double creditoSolicitado = request.montoCredito() != null ? request.montoCredito() : 0;
+            double totalCubierto = sumaPagos + (TipoVenta.CREDITO.name().equals(request.tipoVenta()) ? creditoSolicitado : 0);
+            if (totalCubierto + 0.001 < request.total()) {
                 throw new InvalidEntryException("La suma de los pagos ($" + String.format("%.2f", sumaPagos)
                         + ") es menor al total de la venta ($" + String.format("%.2f", request.total()) + ")");
+            }
+            if (sumaPagos > request.total() + 0.001 && request.pagos().stream().anyMatch(p -> !esEfectivo(p.idTipoPago()))) {
+                throw new InvalidEntryException("Solo se permite cambio cuando el excedente es efectivo");
             }
             for (VentaPagoRequest pagoReq : request.pagos()) {
                 TipoPago tipoPago = tipoPagoRepository.findById(pagoReq.idTipoPago())
                         .orElseThrow(() -> new NotFoundException("Tipo de pago no encontrado"));
+                boolean esCredito = tipoPago.getNombre().equalsIgnoreCase("credito")
+                        || tipoPago.getNombre().equalsIgnoreCase("crédito");
+                if (TipoVenta.CREDITO.name().equals(request.tipoVenta()) && esCredito) {
+                    continue;
+                }
                 VentaPago pago = VentaPago.builder()
                         .venta(venta)
                         .tipoPago(tipoPago)
@@ -170,17 +183,41 @@ public class VentaServiceImpl implements VentaService {
             if (cliente.getTieneCredito() == null || !cliente.getTieneCredito()) {
                 throw new InvalidEntryException("El cliente no tiene credito habilitado");
             }
+            double montoCredito = request.montoCredito() != null ? request.montoCredito() : request.total();
+            double pagosNoCredito = 0;
+            for (VentaPagoRequest pago : request.pagos() == null ? List.<VentaPagoRequest>of() : request.pagos()) {
+                TipoPago tipo = tipoPagoRepository.findById(pago.idTipoPago()).orElseThrow();
+                if (!tipo.getNombre().equalsIgnoreCase("credito") && !tipo.getNombre().equalsIgnoreCase("crédito")) {
+                    pagosNoCredito += pago.monto();
+                }
+            }
+            if (pagosNoCredito > request.total() + 0.001
+                    && request.pagos().stream().anyMatch(p -> {
+                TipoPago t = tipoPagoRepository.findById(p.idTipoPago()).orElseThrow();
+                return !t.getNombre().equalsIgnoreCase("efectivo");
+            })) {
+                throw new InvalidEntryException("Solo se permite cambio con efectivo");
+            }
+            if (request.montoCredito() == null) {
+                montoCredito = Math.max(0, request.total() - pagosNoCredito);
+            }
+            if (Math.abs((pagosNoCredito + montoCredito) - request.total()) > 0.01) {
+                throw new InvalidEntryException("Los pagos y el monto financiado deben cubrir exactamente el total");
+            }
+            if (montoCredito < -0.001) {
+                throw new InvalidEntryException("Los pagos exceden el total; solo se permite cambio en efectivo");
+            }
             if (cliente.getLimiteCredito() != null && cliente.getLimiteCredito() > 0) {
                 double disponible = cliente.getLimiteCredito()
                         - (cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0);
-                if (request.total() > disponible) {
-                    throw new InvalidEntryException("El total ($" + String.format("%.2f", request.total())
+                if (montoCredito > disponible) {
+                    throw new InvalidEntryException("El total ($" + String.format("%.2f", montoCredito)
                             + ") excede el limite de credito disponible ($" + String.format("%.2f", disponible) + ")");
                 }
             }
 
             double porcentajeInteres = request.porcentajeInteres() != null ? request.porcentajeInteres() : 0;
-            double montoOriginal = request.total() + (request.total() * porcentajeInteres / 100);
+            double montoOriginal = montoCredito + (montoCredito * porcentajeInteres / 100);
             int plazoMeses = request.plazoMeses() != null ? request.plazoMeses() : 1;
 
             Credito credito = Credito.builder()
@@ -212,6 +249,8 @@ public class VentaServiceImpl implements VentaService {
 
             cliente.setSaldoActual((cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0) + montoOriginal);
             clienteRepository.save(cliente);
+            caja.setSaldoActual(caja.getSaldoActual() + (request.total() - montoCredito));
+            cajaRepository.save(caja);
         } else {
             caja.setSaldoActual(caja.getSaldoActual() + request.total());
             cajaRepository.save(caja);
@@ -425,6 +464,20 @@ public class VentaServiceImpl implements VentaService {
     public VentaResponse ponerEnEspera(Integer id) {
         Venta venta = ventaRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Venta no encontrada"));
+        if (venta.getEstado() != EstadoVenta.COMPLETADA) {
+            throw new InvalidEntryException("Solo se puede poner en espera una venta completada");
+        }
+        if (venta.getTipoVenta() != TipoVenta.CONTADO) {
+            throw new InvalidEntryException("Solo se pueden poner en espera ventas de contado");
+        }
+        // Una venta en espera no debe dejar un cobro aplicado. El inventario reservado se conserva.
+        List<VentaPago> pagos = ventaPagoRepository.findByVentaIdVenta(id);
+        if (!pagos.isEmpty()) {
+            ventaPagoRepository.deleteAll(pagos);
+        }
+        Caja caja = venta.getCaja();
+        caja.setSaldoActual(caja.getSaldoActual() - venta.getTotal());
+        cajaRepository.save(caja);
         venta.setEstado(EstadoVenta.ESPERA);
         venta = ventaRepository.save(venta);
         return toResponse(venta, ventaDetalleRepository.findByVentaIdVenta(id));
@@ -599,8 +652,7 @@ public class VentaServiceImpl implements VentaService {
 
     @Override
     public List<VentaResponse> ventasEnEspera(Integer idCaja) {
-        return ventaRepository.findByCajaIdCajaAndEstadoInOrderByFechaDesc(
-                        idCaja, List.of(EstadoVenta.ESPERA, EstadoVenta.COMPLETADA))
+        return ventaRepository.findByCajaIdCajaAndEstadoOrderByFechaDesc(idCaja, EstadoVenta.ESPERA)
                 .stream().map(v -> toResponse(v, ventaDetalleRepository.findByVentaIdVenta(v.getIdVenta())))
                 .toList();
     }
@@ -618,10 +670,10 @@ public class VentaServiceImpl implements VentaService {
     @Override
     @Transactional
     public VentaResponse registrarPago(Integer id, List<VentaPagoRequest> pagos) {
-        Venta venta = ventaRepository.findById(id)
+        Venta venta = ventaRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Venta no encontrada"));
-        if (venta.getEstado() != EstadoVenta.COMPLETADA) {
-            throw new InvalidEntryException("La venta no está como envío de pedido");
+        if (venta.getEstado() != EstadoVenta.ESPERA) {
+            throw new InvalidEntryException("La venta no está pendiente de cobro");
         }
         if (venta.getTipoVenta() != TipoVenta.CONTADO) {
             throw new InvalidEntryException("Una venta en envío de pedido solo puede ser de contado");
@@ -629,10 +681,16 @@ public class VentaServiceImpl implements VentaService {
         if (pagos == null || pagos.isEmpty()) {
             throw new InvalidEntryException("Debe indicar al menos una forma de pago");
         }
+        if (!ventaPagoRepository.findByVentaIdVenta(id).isEmpty()) {
+            throw new InvalidEntryException("La venta ya tiene pagos registrados");
+        }
         double sumaPagos = pagos.stream().mapToDouble(VentaPagoRequest::monto).sum();
         if (sumaPagos + 0.01 < venta.getTotal()) {
             throw new InvalidEntryException("La suma de los pagos ($" + String.format("%.2f", sumaPagos)
                     + ") es menor al total de la venta ($" + String.format("%.2f", venta.getTotal()) + ")");
+        }
+        if (sumaPagos > venta.getTotal() + 0.001 && pagos.stream().anyMatch(p -> !esEfectivo(p.idTipoPago()))) {
+            throw new InvalidEntryException("Solo se permite cambio cuando el excedente es efectivo");
         }
         for (VentaPagoRequest pagoReq : pagos) {
             TipoPago tipoPago = tipoPagoRepository.findById(pagoReq.idTipoPago())
@@ -698,6 +756,7 @@ public class VentaServiceImpl implements VentaService {
                 .cantidad(cantidad)
                 .precioUnitario(precioVenta)
                 .subtotal(subtotal)
+                .costoUnitario(precioCompra)
                 .build();
         ventaDetalleRepository.save(detalle);
 
@@ -723,6 +782,12 @@ public class VentaServiceImpl implements VentaService {
         return prefix + String.format("%05d", num);
     }
 
+    private boolean esEfectivo(Integer idTipoPago) {
+        TipoPago tipo = tipoPagoRepository.findById(idTipoPago)
+                .orElseThrow(() -> new NotFoundException("Tipo de pago no encontrado"));
+        return tipo.getNombre().equalsIgnoreCase("efectivo");
+    }
+
     private VentaResponse toResponse(Venta v, List<VentaDetalle> detalles) {
         List<VentaDetalleResponse> detalleResponses = detalles.stream()
                 .map(d -> new VentaDetalleResponse(
@@ -733,7 +798,7 @@ public class VentaServiceImpl implements VentaService {
                         d.getDescripcion(),
                         d.getCantidad(),
                         d.getProducto() != null ? d.getProducto().getUnidadMedida() : null,
-                        d.getPrecioUnitario(), d.getSubtotal(),
+                         d.getPrecioUnitario(), d.getSubtotal(), d.getCostoUnitario(),
                         d.getAtributosText()))
                 .toList();
 

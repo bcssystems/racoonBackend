@@ -16,5 +16,8 @@ public record MovimientoStockResponse(
     String referencia,
     String usuario,
     String observacion,
-    LocalDateTime fechaMovimiento
+    Double costoUnitario,
+    Double costoTotal,
+    LocalDateTime fechaMovimiento,
+    String estado
 ) {}

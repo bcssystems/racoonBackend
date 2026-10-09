@@ -51,7 +51,10 @@ public class KardexServiceImpl implements KardexService {
                         m.getReferencia(),
                         m.getUsuario(),
                         m.getObservacion(),
-                        m.getFechaMovimiento()
+                        m.getCostoUnitario(),
+                        m.getCostoTotal(),
+                        m.getFechaMovimiento(),
+                        m.getEstado() != null ? m.getEstado().name() : "APROBADO"
                 ));
     }
 

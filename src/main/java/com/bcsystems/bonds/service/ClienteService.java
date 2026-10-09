@@ -6,6 +6,7 @@ import com.bcsystems.bonds.dto.ClienteResponse;
 import com.bcsystems.bonds.dto.ListaNegraRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
 
 import java.util.List;
 
@@ -20,4 +21,5 @@ public interface ClienteService {
     ClienteResponse cambiarListaNegra(Integer id, ListaNegraRequest request);
     ClienteIneResponse subirIne(Integer id, MultipartFile frontal, MultipartFile trasera);
     ClienteIneResponse obtenerIne(Integer id);
+    Resource descargarIne(Integer id, String lado);
 }

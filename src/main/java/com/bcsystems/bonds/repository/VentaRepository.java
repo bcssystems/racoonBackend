@@ -7,11 +7,16 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public interface VentaRepository extends JpaRepository<Venta, Integer> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from Venta v where v.idVenta = :id")
+    java.util.Optional<Venta> findByIdForUpdate(@Param("id") Integer id);
     boolean existsByFolioPagare(String folioPagare);
     List<Venta> findByCajaIdCajaAndEstadoOrderByFechaDesc(Integer idCaja, EstadoVenta estado);
     List<Venta> findByCajaIdCajaAndEstadoInOrderByFechaDesc(Integer idCaja, List<EstadoVenta> estados);

@@ -8,5 +8,8 @@ public enum TipoMovimiento {
     CREACION,
     ACTUALIZACION,
     RECEPCION_PEDIDO,
-    RECEPCION
+    RECEPCION,
+    RECAMBIO,
+    MERMA,
+    DEVOLUCION
 }

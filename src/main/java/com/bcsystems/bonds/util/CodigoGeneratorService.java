@@ -4,6 +4,7 @@ import com.bcsystems.bonds.repository.ProductoRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class CodigoGeneratorService {
@@ -20,17 +21,10 @@ public class CodigoGeneratorService {
     }
 
     public String generarSku() {
-        long count = productoRepository.count();
-        String prefix = "BOND";
-        String number = String.format("%05d", count + 1);
-        String sku = prefix + number;
-
-        while (productoRepository.findBySkuIgnoreCase(sku).isPresent()) {
-            count++;
-            number = String.format("%05d", count);
-            sku = prefix + number;
-        }
-
+        String sku;
+        do {
+            sku = "7502025" + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        } while (productoRepository.findBySkuIgnoreCase(sku).isPresent());
         return sku;
     }
 

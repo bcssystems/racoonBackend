@@ -10,5 +10,6 @@ public record VentaDetalleResponse(
         String unidadMedida,
         Double precioUnitario,
         Double subtotal,
+        Double costoUnitario,
         String atributosText
 ) {}

@@ -8,5 +8,8 @@ public record MovimientoStockRequest(
     @NotNull Integer cantidad,
     Integer idSucursal,
     String referencia,
-    String observacion
+    String observacion,
+    Double costoUnitario,
+    Double costoTotal,
+    String codigoAutorizacion
 ) {}

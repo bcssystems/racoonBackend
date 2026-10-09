@@ -43,13 +43,13 @@ public class RecepcionController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('RECEPCIONES_CREAR')")
+    @PreAuthorize("hasAnyAuthority('RECEPCIONES_CREAR','MOVIMIENTOS_INVENTARIO_AUTORIZAR')")
     public ResponseEntity<RecepcionResponse> crear(@Valid @RequestBody RecepcionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(recepcionService.crear(request));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('RECEPCIONES_ELIMINAR')")
+    @PreAuthorize("hasAnyAuthority('RECEPCIONES_ELIMINAR','MOVIMIENTOS_INVENTARIO_AUTORIZAR')")
     public ResponseEntity<Void> eliminar(@PathVariable Integer id) {
         recepcionService.eliminar(id);
         return ResponseEntity.noContent().build();

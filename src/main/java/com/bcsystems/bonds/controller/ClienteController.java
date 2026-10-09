@@ -10,6 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 
 import java.util.List;
 
@@ -90,5 +92,15 @@ public class ClienteController {
             @RequestParam(value = "frontal", required = false) MultipartFile frontal,
             @RequestParam(value = "trasera", required = false) MultipartFile trasera) {
         return ResponseEntity.ok(clienteService.subirIne(id, frontal, trasera));
+    }
+
+    @GetMapping("/{id}/ine/{lado}/descarga")
+    @PreAuthorize("hasAuthority('CLIENTES_VER')")
+    public ResponseEntity<Resource> descargarIne(@PathVariable Integer id, @PathVariable String lado) {
+        Resource resource = clienteService.descargarIne(id, lado);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ine-" + lado + ".jpg\"")
+                .header(HttpHeaders.CONTENT_TYPE, "image/jpeg")
+                .body(resource);
     }
 }

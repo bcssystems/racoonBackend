@@ -22,6 +22,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.FileSystemResource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -198,12 +200,14 @@ public class ClienteServiceImpl implements ClienteService {
                     .orElse(ClienteIne.builder().cliente(cliente).subidoEn(LocalDateTime.now()).build());
 
             if (frontal != null && !frontal.isEmpty()) {
+                borrarArchivo(ine.getUrlFotoFrontal(), uploadPath);
                 String nombre = UUID.randomUUID() + ".ine.f.jpg";
                 Files.copy(frontal.getInputStream(), uploadPath.resolve(nombre), StandardCopyOption.REPLACE_EXISTING);
                 ine.setUrlFotoFrontal("/uploads/" + nombre);
                 ine.setNombreArchivoFrontal(frontal.getOriginalFilename());
             }
             if (trasera != null && !trasera.isEmpty()) {
+                borrarArchivo(ine.getUrlFotoTrasera(), uploadPath);
                 String nombre = UUID.randomUUID() + ".ine.t.jpg";
                 Files.copy(trasera.getInputStream(), uploadPath.resolve(nombre), StandardCopyOption.REPLACE_EXISTING);
                 ine.setUrlFotoTrasera("/uploads/" + nombre);
@@ -225,6 +229,23 @@ public class ClienteServiceImpl implements ClienteService {
         return clienteIneRepository.findByClienteIdCliente(id)
                 .map(this::toIneResponse)
                 .orElse(null);
+    }
+
+    @Override
+    public Resource descargarIne(Integer id, String lado) {
+        ClienteIne ine = clienteIneRepository.findByClienteIdCliente(id)
+                .orElseThrow(() -> new NotFoundException("INE no encontrada"));
+        String url = "frontal".equalsIgnoreCase(lado) ? ine.getUrlFotoFrontal() : ine.getUrlFotoTrasera();
+        if (url == null || !url.startsWith("/uploads/")) throw new NotFoundException("Foto del INE no encontrada");
+        Resource recurso = new FileSystemResource(Paths.get(uploadDir, url.substring("/uploads/".length())));
+        if (!recurso.exists()) throw new NotFoundException("Archivo del INE no encontrado");
+        return recurso;
+    }
+
+    private void borrarArchivo(String url, Path dir) throws IOException {
+        if (url != null && url.startsWith("/uploads/")) {
+            Files.deleteIfExists(dir.resolve(url.substring("/uploads/".length())));
+        }
     }
 
     private Cliente buscarOExcepcion(Integer id) {

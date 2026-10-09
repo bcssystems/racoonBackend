@@ -2,6 +2,7 @@ package com.bcsystems.bonds.service.impl;
 
 import com.bcsystems.bonds.domain.*;
 import com.bcsystems.bonds.domain.en.AccionAuditoria;
+import com.bcsystems.bonds.domain.en.EstadoMovimientoStock;
 import com.bcsystems.bonds.domain.en.TipoMovimiento;
 import com.bcsystems.bonds.dto.*;
 import com.bcsystems.bonds.exception.InvalidEntryException;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
@@ -323,10 +326,36 @@ public class ProductoServiceImpl implements ProductoService {
     @Transactional
     @Override
     public ProductoResponse registrarMovimientoStock(Integer idProducto, MovimientoStockRequest request) {
-        if (request.tipoMovimiento() != TipoMovimiento.ENTRADA && request.tipoMovimiento() != TipoMovimiento.SALIDA) {
-            throw new InvalidEntryException("Solo se permiten movimientos de tipo ENTRADA o SALIDA");
+        if (request.tipoMovimiento() == TipoMovimiento.TRANSFERENCIA) {
+            throw new InvalidEntryException("Las transferencias requieren sucursal origen y destino");
+        }
+        if (request.tipoMovimiento() == TipoMovimiento.AJUSTE || request.tipoMovimiento() == TipoMovimiento.CREACION
+                || request.tipoMovimiento() == TipoMovimiento.ACTUALIZACION || request.tipoMovimiento() == TipoMovimiento.RECEPCION
+                || request.tipoMovimiento() == TipoMovimiento.RECEPCION_PEDIDO) {
+            throw new InvalidEntryException("Tipo de movimiento no permitido desde este formulario");
         }
         Producto producto = buscarOExcepcion(idProducto);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean puedeAutorizar = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("PRODUCTOS_MOVIMIENTO_AUTORIZAR"));
+        if (!puedeAutorizar) {
+            Sucursal sucursalSolicitud = request.idSucursal() == null ? null : sucursalRepository.findById(request.idSucursal())
+                    .orElseThrow(() -> new NotFoundException("Sucursal no encontrada"));
+            MovimientoStock solicitud = MovimientoStock.builder()
+                    .producto(producto).sucursal(sucursalSolicitud)
+                    .tipoMovimiento(request.tipoMovimiento()).cantidad(request.cantidad())
+                    .referencia(request.referencia()).usuario(obtenerUsuarioActual())
+                    .observacion(request.observacion()).costoUnitario(request.costoUnitario())
+                    .costoTotal(request.costoTotal() != null ? request.costoTotal()
+                            : request.costoUnitario() != null ? request.costoUnitario() * request.cantidad() : null)
+                    .estado(EstadoMovimientoStock.PENDIENTE)
+                    .build();
+            movimientoStockRepository.save(solicitud);
+            auditoriaService.registrar("MOVIMIENTO_STOCK", solicitud.getIdMovimiento(), "SOLICITUD", obtenerUsuarioActual(),
+                    "Solicitud pendiente de " + request.tipoMovimiento() + " de " + request.cantidad() + " unidades");
+            return toResponse(producto);
+        }
 
         Sucursal sucursal = null;
         if (request.idSucursal() != null) {
@@ -352,11 +381,11 @@ public class ProductoServiceImpl implements ProductoService {
             stockAnteriorSuc = inventario.getStock();
 
             switch (request.tipoMovimiento()) {
-                case ENTRADA -> {
+                case ENTRADA, DEVOLUCION -> {
                     nuevoStockSuc = stockAnteriorSuc + cantidad;
                     nuevoStockGlobal = stockAnteriorGlobal + cantidad;
                 }
-                case SALIDA -> {
+                case SALIDA, RECAMBIO, MERMA -> {
                     if (stockAnteriorSuc < cantidad) {
                         throw new InvalidEntryException("Stock insuficiente en sucursal. Actual: " + stockAnteriorSuc +
                                 ", solicitado: " + cantidad);
@@ -376,8 +405,8 @@ public class ProductoServiceImpl implements ProductoService {
             inventarioSucursalRepository.save(inventario);
         } else {
             switch (request.tipoMovimiento()) {
-                case ENTRADA -> nuevoStockGlobal = stockAnteriorGlobal + cantidad;
-                case SALIDA -> {
+                case ENTRADA, DEVOLUCION -> nuevoStockGlobal = stockAnteriorGlobal + cantidad;
+                case SALIDA, RECAMBIO, MERMA -> {
                     if (stockAnteriorGlobal < cantidad) {
                         throw new InvalidEntryException("Stock insuficiente. Actual: " + stockAnteriorGlobal +
                                 ", solicitado: " + cantidad);
@@ -404,6 +433,9 @@ public class ProductoServiceImpl implements ProductoService {
                 .referencia(request.referencia())
                 .usuario(usuario)
                 .observacion(request.observacion())
+                .costoUnitario(request.costoUnitario())
+                .costoTotal(request.costoTotal() != null ? request.costoTotal()
+                        : (request.costoUnitario() != null ? request.costoUnitario() * request.cantidad() : null))
                 .build();
         movimientoStockRepository.save(movimiento);
 
@@ -413,6 +445,112 @@ public class ProductoServiceImpl implements ProductoService {
                 request.referencia(), cantidad, stockAnteriorGlobal, nuevoStockGlobal);
 
         return toResponse(producto);
+    }
+
+    @Transactional
+    @Override
+    public CodigoMovimientoResponse generarCodigoMovimiento(Integer idMovimiento) {
+        MovimientoStock movimiento = movimientoStockRepository.findByIdForUpdate(idMovimiento)
+                .orElseThrow(() -> new NotFoundException("Movimiento no encontrado"));
+        if (movimiento.getEstado() != EstadoMovimientoStock.PENDIENTE) {
+            throw new InvalidEntryException("El movimiento no está pendiente");
+        }
+        String codigo = String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+        LocalDateTime ahora = LocalDateTime.now();
+        movimiento.setCodigoAutorizacion(codigo);
+        movimiento.setFechaGeneracionCodigo(ahora);
+        movimiento.setGeneroAutorizacion(obtenerUsuarioActual());
+        movimientoStockRepository.save(movimiento);
+        return new CodigoMovimientoResponse(idMovimiento, codigo, ahora, ahora.plusMinutes(10));
+    }
+
+    @Transactional
+    @Override
+    public ProductoResponse aprobarMovimiento(Integer idMovimiento, MovimientoAutorizacionRequest request) {
+        MovimientoStock movimiento = movimientoStockRepository.findByIdForUpdate(idMovimiento)
+                .orElseThrow(() -> new NotFoundException("Movimiento no encontrado"));
+        if (movimiento.getEstado() != EstadoMovimientoStock.PENDIENTE) {
+            throw new InvalidEntryException("El movimiento ya fue procesado");
+        }
+        if (movimiento.getCodigoAutorizacion() != null) {
+            if (request == null || request.codigoAutorizacion() == null
+                    || !request.codigoAutorizacion().trim().equals(movimiento.getCodigoAutorizacion())) {
+                throw new InvalidEntryException("Código de autorización inválido");
+            }
+            if (movimiento.getFechaGeneracionCodigo() == null
+                    || movimiento.getFechaGeneracionCodigo().plusMinutes(10).isBefore(LocalDateTime.now())) {
+                throw new InvalidEntryException("El código de autorización expiró");
+            }
+        }
+        aplicarMovimiento(movimiento);
+        movimiento.setEstado(EstadoMovimientoStock.APROBADO);
+        movimiento.setCodigoAutorizacion(null);
+        movimiento.setFechaGeneracionCodigo(null);
+        movimientoStockRepository.save(movimiento);
+        return toResponse(movimiento.getProducto());
+    }
+
+    @Transactional
+    @Override
+    public MovimientoStockResponse rechazarMovimiento(Integer idMovimiento) {
+        MovimientoStock movimiento = movimientoStockRepository.findByIdForUpdate(idMovimiento)
+                .orElseThrow(() -> new NotFoundException("Movimiento no encontrado"));
+        if (movimiento.getEstado() != EstadoMovimientoStock.PENDIENTE) {
+            throw new InvalidEntryException("El movimiento ya fue procesado");
+        }
+        movimiento.setEstado(EstadoMovimientoStock.RECHAZADO);
+        movimientoStockRepository.save(movimiento);
+        return movimientoResponse(movimiento);
+    }
+
+    private void aplicarMovimiento(MovimientoStock movimiento) {
+        Producto producto = movimiento.getProducto();
+        Sucursal sucursal = movimiento.getSucursal();
+        int globalAnterior = producto.getStockActual();
+        int cantidad = movimiento.getCantidad();
+        int sucAnterior = 0;
+        int sucNuevo = 0;
+        int globalNuevo;
+        if (sucursal != null) {
+            InventarioSucursal inventario = inventarioSucursalRepository
+                    .findByProductoIdProductoAndSucursalIdSucursal(producto.getIdProducto(), sucursal.getIdSucursal())
+                    .orElse(InventarioSucursal.builder().producto(producto).sucursal(sucursal).stock(0).build());
+            sucAnterior = inventario.getStock();
+            switch (movimiento.getTipoMovimiento()) {
+                case ENTRADA, DEVOLUCION -> { sucNuevo = sucAnterior + cantidad; globalNuevo = globalAnterior + cantidad; }
+                case SALIDA, RECAMBIO, MERMA -> {
+                    if (sucAnterior < cantidad) throw new InvalidEntryException("Stock insuficiente en sucursal");
+                    sucNuevo = sucAnterior - cantidad; globalNuevo = globalAnterior - cantidad;
+                }
+                default -> throw new InvalidEntryException("Tipo de movimiento no permitido");
+            }
+            inventario.setStock(sucNuevo);
+            inventarioSucursalRepository.save(inventario);
+        } else {
+            if (movimiento.getTipoMovimiento() == TipoMovimiento.ENTRADA || movimiento.getTipoMovimiento() == TipoMovimiento.DEVOLUCION) {
+                globalNuevo = globalAnterior + cantidad;
+            } else {
+                if (globalAnterior < cantidad) throw new InvalidEntryException("Stock insuficiente");
+                globalNuevo = globalAnterior - cantidad;
+            }
+        }
+        producto.setStockActual(globalNuevo);
+        productoRepository.save(producto);
+        movimiento.setStockAnterior(sucursal != null ? sucAnterior : globalAnterior);
+        movimiento.setStockNuevo(sucursal != null ? sucNuevo : globalNuevo);
+        movimiento.setUsuario(obtenerUsuarioActual());
+        movimientoStockRepository.save(movimiento);
+        auditoriaService.registrarMovimiento("PRODUCTO", producto.getIdProducto(), movimiento.getTipoMovimiento().name(),
+                obtenerUsuarioActual(), "Movimiento autorizado de " + cantidad + " unidades", movimiento.getReferencia(),
+                cantidad, globalAnterior, globalNuevo);
+    }
+
+    private MovimientoStockResponse movimientoResponse(MovimientoStock m) {
+        return new MovimientoStockResponse(m.getIdMovimiento(), m.getProducto().getIdProducto(), m.getProducto().getSku(),
+                m.getProducto().getNombre(), m.getSucursal() != null ? m.getSucursal().getIdSucursal() : null,
+                m.getSucursal() != null ? m.getSucursal().getNombre() : "Global", m.getTipoMovimiento().name(),
+                m.getCantidad(), m.getStockAnterior(), m.getStockNuevo(), m.getReferencia(), m.getUsuario(),
+                m.getObservacion(), m.getCostoUnitario(), m.getCostoTotal(), m.getFechaMovimiento(), m.getEstado().name());
     }
 
     @Transactional

@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 
@@ -37,5 +39,11 @@ public class ConfiguracionController {
     public ResponseEntity<ConfiguracionResponse> actualizar(
             @PathVariable String clave, @Valid @RequestBody ConfiguracionRequest request) {
         return ResponseEntity.ok(configuracionService.actualizar(clave, request));
+    }
+
+    @PostMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('CONFIGURACION_EDITAR')")
+    public ResponseEntity<ConfiguracionResponse> actualizarLogo(@RequestPart("archivo") MultipartFile archivo) {
+        return ResponseEntity.ok(configuracionService.actualizarLogo(archivo));
     }
 }

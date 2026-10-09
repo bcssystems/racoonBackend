@@ -8,12 +8,17 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface MovimientoStockRepository extends JpaRepository<MovimientoStock, Integer> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from MovimientoStock m where m.idMovimiento = :id")
+    java.util.Optional<MovimientoStock> findByIdForUpdate(@Param("id") Integer id);
     @Query("SELECT m FROM MovimientoStock m WHERE " +
            "(:idProducto IS NULL OR m.producto.idProducto = :idProducto) AND " +
            "(:idSucursal IS NULL OR m.sucursal.idSucursal = :idSucursal) AND " +

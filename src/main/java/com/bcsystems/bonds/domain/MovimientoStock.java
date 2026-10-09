@@ -1,6 +1,7 @@
 package com.bcsystems.bonds.domain;
 
 import com.bcsystems.bonds.domain.en.TipoMovimiento;
+import com.bcsystems.bonds.domain.en.EstadoMovimientoStock;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -37,10 +38,10 @@ public class MovimientoStock {
     @Column(nullable = false)
     private Integer cantidad;
 
-    @Column(nullable = false)
+    @Column
     private Integer stockAnterior;
 
-    @Column(nullable = false)
+    @Column
     private Integer stockNuevo;
 
     @Column(length = 50)
@@ -51,6 +52,23 @@ public class MovimientoStock {
 
     @Column(columnDefinition = "TEXT")
     private String observacion;
+
+    @Column
+    private Double costoUnitario;
+
+    @Column
+    private Double costoTotal;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private EstadoMovimientoStock estado = EstadoMovimientoStock.APROBADO;
+
+    @Column(length = 4)
+    private String codigoAutorizacion;
+    private LocalDateTime fechaGeneracionCodigo;
+    @Column(length = 50)
+    private String generoAutorizacion;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

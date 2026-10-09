@@ -6,5 +6,6 @@ public record VentaDetalleRequest(
         Integer cantidad,
         Double precioUnitario,
         Double subtotal,
-        String atributosText
+        String atributosText,
+        Double costoUnitario
 ) {}
