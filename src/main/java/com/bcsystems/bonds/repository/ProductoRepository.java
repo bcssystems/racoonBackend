@@ -26,6 +26,19 @@ public interface ProductoRepository extends JpaRepository<Producto, Integer> {
     @Query("SELECT COALESCE(SUM(COALESCE(p.costoPromedio, 0) * p.stockActual), 0) FROM Producto p WHERE p.activo = true")
     Double sumCostoTotalInventario();
 
+    @Query("SELECT COUNT(p) FROM Producto p WHERE p.activo = true " +
+           "AND (:idCategoria IS NULL OR p.categoria.idCategoria = :idCategoria) " +
+           "AND (:idSucursal IS NULL OR EXISTS (SELECT i FROM InventarioSucursal i WHERE i.producto.idProducto = p.idProducto AND i.sucursal.idSucursal = :idSucursal))")
+    long countActivosFiltrados(@Param("idCategoria") Integer idCategoria, @Param("idSucursal") Integer idSucursal);
+
+    @Query("SELECT COALESCE(SUM(p.stockActual), 0) FROM Producto p WHERE p.activo = true " +
+           "AND (:idCategoria IS NULL OR p.categoria.idCategoria = :idCategoria)")
+    Integer sumStockActivosPorCategoria(@Param("idCategoria") Integer idCategoria);
+
+    @Query("SELECT COALESCE(SUM(COALESCE(p.costoPromedio, 0) * p.stockActual), 0) FROM Producto p WHERE p.activo = true " +
+           "AND (:idCategoria IS NULL OR p.categoria.idCategoria = :idCategoria)")
+    Double sumCostoActivosPorCategoria(@Param("idCategoria") Integer idCategoria);
+
     @Query("SELECT p FROM Producto p LEFT JOIN FETCH p.categoria WHERE " +
            "(:search IS NULL OR LOWER(p.nombre) LIKE LOWER(CONCAT('%', :search, '%')) " +
            "OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%'))) " +

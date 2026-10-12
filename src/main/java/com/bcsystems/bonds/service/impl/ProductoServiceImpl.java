@@ -659,12 +659,16 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     @Override
-    public ProductoStats obtenerStats() {
+    public ProductoStats obtenerStats(Integer idCategoria, Integer idSucursal) {
         long total = productoRepository.count();
-        long activos = productoRepository.countByActivoTrue();
-        Integer stockGlobal = productoRepository.sumStockActual();
+        long activos = productoRepository.countActivosFiltrados(idCategoria, idSucursal);
+        Integer stockGlobal = idSucursal != null
+                ? inventarioSucursalRepository.sumStockActivosFiltrado(idSucursal, idCategoria)
+                : productoRepository.sumStockActivosPorCategoria(idCategoria);
         Integer stockMinimo = productoRepository.sumStockMinimo();
-        Double costoTotal = productoRepository.sumCostoTotalInventario();
+        Double costoTotal = idSucursal != null
+                ? inventarioSucursalRepository.sumCostoActivosFiltrado(idSucursal, idCategoria)
+                : productoRepository.sumCostoActivosPorCategoria(idCategoria);
         return new ProductoStats(total, activos,
                 stockGlobal != null ? stockGlobal : 0,
                 stockMinimo != null ? stockMinimo : 0,

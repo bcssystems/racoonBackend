@@ -29,4 +29,12 @@ public interface InventarioSucursalRepository extends JpaRepository<InventarioSu
 
     @Query("SELECT i.sucursal.nombre, COALESCE(SUM(COALESCE(i.producto.costoPromedio, 0) * i.stock), 0) FROM InventarioSucursal i GROUP BY i.sucursal.nombre")
     List<Object[]> sumCostoPorSucursal();
+
+    @Query("SELECT COALESCE(SUM(i.stock), 0) FROM InventarioSucursal i WHERE i.sucursal.idSucursal = :idSucursal " +
+           "AND i.producto.activo = true AND (:idCategoria IS NULL OR i.producto.categoria.idCategoria = :idCategoria)")
+    Integer sumStockActivosFiltrado(@Param("idSucursal") Integer idSucursal, @Param("idCategoria") Integer idCategoria);
+
+    @Query("SELECT COALESCE(SUM(COALESCE(i.producto.costoPromedio, 0) * i.stock), 0) FROM InventarioSucursal i WHERE i.sucursal.idSucursal = :idSucursal " +
+           "AND i.producto.activo = true AND (:idCategoria IS NULL OR i.producto.categoria.idCategoria = :idCategoria)")
+    Double sumCostoActivosFiltrado(@Param("idSucursal") Integer idSucursal, @Param("idCategoria") Integer idCategoria);
 }

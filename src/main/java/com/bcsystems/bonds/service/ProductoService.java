@@ -18,7 +18,7 @@ public interface ProductoService {
     CodigoMovimientoResponse generarCodigoMovimiento(Integer idMovimiento);
     ProductoResponse aprobarMovimiento(Integer idMovimiento, MovimientoAutorizacionRequest request);
     MovimientoStockResponse rechazarMovimiento(Integer idMovimiento);
-    ProductoStats obtenerStats();
+    ProductoStats obtenerStats(Integer idCategoria, Integer idSucursal);
     java.util.List<java.util.Map<String, Object>> costoPorSucursal();
 
     record ProductoStats(long total, long activos, long stockGlobal, long stockMinimo, double costoTotalInventario) {}

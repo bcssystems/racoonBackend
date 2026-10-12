@@ -27,8 +27,10 @@ public class ProductoController {
 
     @GetMapping("/stats")
     @PreAuthorize("hasAuthority('PRODUCTOS_VER')")
-    public ResponseEntity<ProductoService.ProductoStats> stats() {
-        return ResponseEntity.ok(productoService.obtenerStats());
+    public ResponseEntity<ProductoService.ProductoStats> stats(
+            @RequestParam(required = false) Integer idCategoria,
+            @RequestParam(required = false) Integer idSucursal) {
+        return ResponseEntity.ok(productoService.obtenerStats(idCategoria, idSucursal));
     }
 
     @GetMapping("/stats/costo-por-sucursal")
