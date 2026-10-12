@@ -37,10 +37,11 @@ public class VentaController {
             @RequestParam(required = false) Integer idSucursal,
             @RequestParam(required = false) Integer idCaja,
             @RequestParam(required = false) String estado,
+            @RequestParam(required = false) String tipoDetalle,
             @RequestParam(required = false) LocalDateTime fechaInicio,
             @RequestParam(required = false) LocalDateTime fechaFin,
             @PageableDefault(size = 20, sort = "fecha", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(ventaService.listar(idSucursal, idCaja, estado, fechaInicio, fechaFin, pageable));
+        return ResponseEntity.ok(ventaService.listar(idSucursal, idCaja, estado, tipoDetalle, fechaInicio, fechaFin, pageable));
     }
 
     @PostMapping

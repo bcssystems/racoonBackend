@@ -6,6 +6,8 @@ public record VentaDetalleResponse(
         String productoSku,
         String productoNombre,
         String descripcion,
+        String tipoDetalle,
+        Integer idItemRapido,
         Integer cantidad,
         String unidadMedida,
         Double precioUnitario,

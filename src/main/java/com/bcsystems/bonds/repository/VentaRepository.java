@@ -35,6 +35,7 @@ public interface VentaRepository extends JpaRepository<Venta, Integer> {
         WHERE (:idSucursal IS NULL OR v.caja.sucursal.idSucursal = :idSucursal)
         AND (:idCaja IS NULL OR v.caja.idCaja = :idCaja)
         AND (:estado IS NULL OR v.estado = :estado)
+        AND (:tipoDetalle IS NULL OR EXISTS (SELECT d FROM VentaDetalle d WHERE d.venta.idVenta = v.idVenta AND d.tipoDetalle = :tipoDetalle))
         AND (:fechaInicio IS NULL OR v.fecha >= :fechaInicio)
         AND (:fechaFin IS NULL OR v.fecha <= :fechaFin)
         ORDER BY v.fecha DESC
@@ -43,6 +44,7 @@ public interface VentaRepository extends JpaRepository<Venta, Integer> {
             @Param("idSucursal") Integer idSucursal,
             @Param("idCaja") Integer idCaja,
             @Param("estado") EstadoVenta estado,
+            @Param("tipoDetalle") String tipoDetalle,
             @Param("fechaInicio") LocalDateTime fechaInicio,
             @Param("fechaFin") LocalDateTime fechaFin,
             Pageable pageable);

@@ -17,6 +17,9 @@ public record CotizacionRequest(
         String tipoVenta,
         Integer plazoMeses,
         Double porcentajeInteres,
+        String periodicidad,
+        Integer numeroParcialidades,
+        java.time.LocalDate fechaPrimerPago,
         String nota,
         @NotEmpty @Valid List<Detalle> detalles
 ) {

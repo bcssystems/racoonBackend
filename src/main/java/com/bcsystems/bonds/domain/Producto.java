@@ -35,6 +35,15 @@ public class Producto {
     @Column(name = "precio1")
     private Double precioBase;
 
+    @Column(name = "precio2")
+    private Double precio2;
+
+    @Column(name = "precio3")
+    private Double precio3;
+
+    @Column(name = "precio4")
+    private Double precio4;
+
     @Builder.Default
     @Column(nullable = false)
     private Integer stockActual = 0;

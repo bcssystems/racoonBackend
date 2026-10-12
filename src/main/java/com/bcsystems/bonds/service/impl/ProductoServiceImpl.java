@@ -107,12 +107,15 @@ public class ProductoServiceImpl implements ProductoService {
         }
 
         String unidad = validarUnidad(request.unidadMedida());
-        validarPrecioSobreCosto(request.precioBase(), request.costoPromedio());
+        validarPreciosSobreCosto(request, request.costoPromedio());
         Producto producto = Producto.builder()
                 .sku(sku)
                 .nombre(request.nombre())
                 .descripcion(request.descripcion())
                 .precioBase(request.precioBase())
+                .precio2(request.precio2())
+                .precio3(request.precio3())
+                .precio4(request.precio4())
                 .costoPromedio(request.costoPromedio())
                 .categoria(resolverCategoria(request.idCategoria()))
                 .unidadMedida(unidad)
@@ -150,6 +153,16 @@ public class ProductoServiceImpl implements ProductoService {
         if (precio != null && costo != null && precio <= costo) {
             throw new InvalidEntryException("El precio debe ser mayor al costo del producto");
         }
+    }
+
+    private void validarPreciosSobreCosto(ProductoRequest request, Double costo) {
+        if (request.precioBase() == null) {
+            throw new InvalidEntryException("El precio público es obligatorio");
+        }
+        validarPrecioSobreCosto(request.precioBase(), costo);
+        validarPrecioSobreCosto(request.precio2(), costo);
+        validarPrecioSobreCosto(request.precio3(), costo);
+        validarPrecioSobreCosto(request.precio4(), costo);
     }
 
     private void guardarInventarios(Producto producto, List<InventarioSucursalRequest> inventarios, String usuario) {
@@ -199,8 +212,11 @@ public class ProductoServiceImpl implements ProductoService {
         producto.setNombre(request.nombre());
         producto.setDescripcion(request.descripcion());
         producto.setPrecioBase(request.precioBase());
+        producto.setPrecio2(request.precio2());
+        producto.setPrecio3(request.precio3());
+        producto.setPrecio4(request.precio4());
         if (request.costoPromedio() != null) producto.setCostoPromedio(request.costoPromedio());
-        validarPrecioSobreCosto(producto.getPrecioBase(), producto.getCostoPromedio());
+        validarPreciosSobreCosto(request, producto.getCostoPromedio());
         producto.setCategoria(resolverCategoria(request.idCategoria()));
         if (request.unidadMedida() != null) producto.setUnidadMedida(validarUnidad(request.unidadMedida()));
         if (request.activo() != null) producto.setActivo(request.activo());
@@ -707,7 +723,8 @@ public class ProductoServiceImpl implements ProductoService {
 
         return new ProductoVentaResponse(
                 p.idProducto(), p.sku(), p.nombre(),
-                p.precioBase(), p.stockActual(), p.costoPromedio(),
+                p.precioBase(), p.precio2(), p.precio3(), p.precio4(),
+                p.stockActual(), p.costoPromedio(),
                 p.activo(), p.unidadMedida(),
                 inventario);
     }
@@ -732,6 +749,7 @@ public class ProductoServiceImpl implements ProductoService {
         return new ProductoResponse(
                 p.getIdProducto(), p.getSku(), p.getNombre(), p.getDescripcion(),
                 p.getPrecioBase(),
+                p.getPrecio2(), p.getPrecio3(), p.getPrecio4(),
                 p.getStockActual(), p.getStockMinimo(), p.getStockMaximo(),
                 p.getCostoPromedio(),
                 p.getCategoria() != null ? p.getCategoria().getIdCategoria() : null,

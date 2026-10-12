@@ -6,6 +6,8 @@ import lombok.*;
 import org.hibernate.envers.Audited;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Audited
 @Entity
@@ -43,6 +45,17 @@ public class Credito {
 
     private Double porcentajeInteres;
 
+    private Double capitalFinanciado;
+    private Double interesTotal;
+    private Double saldoCapital;
+    private Double saldoInteres;
+
+    @Column(length = 12)
+    private String periodicidad = "MENSUAL";
+
+    private Integer numeroParcialidades;
+    private LocalDateTime fechaPrimerPago;
+
     @Column(nullable = false)
     private LocalDateTime fechaVencimiento;
 
@@ -56,4 +69,8 @@ public class Credito {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_usuario", nullable = false)
     private Persona usuario;
+
+    @OneToMany(mappedBy = "credito", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<ParcialidadCredito> parcialidades = new ArrayList<>();
 }

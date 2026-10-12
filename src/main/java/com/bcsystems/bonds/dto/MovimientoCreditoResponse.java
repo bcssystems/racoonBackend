@@ -9,6 +9,8 @@ public record MovimientoCreditoResponse(
         Integer idCredito,
         TipoMovimientoCredito tipo,
         Double monto,
+        Double interesAplicado,
+        Double capitalAplicado,
         Double saldoAnterior,
         Double saldoNuevo,
         String descripcion,

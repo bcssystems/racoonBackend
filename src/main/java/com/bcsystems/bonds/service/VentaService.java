@@ -16,7 +16,7 @@ public interface VentaService {
     VentaResponse crear(VentaRequest request);
     VentaResponse obtenerPorId(Integer id);
     List<VentaResponse> listarPorCaja(Integer idCaja);
-    Page<VentaResponse> listar(Integer idSucursal, Integer idCaja, String estado, LocalDateTime fechaInicio, LocalDateTime fechaFin, Pageable pageable);
+    Page<VentaResponse> listar(Integer idSucursal, Integer idCaja, String estado, String tipoDetalle, LocalDateTime fechaInicio, LocalDateTime fechaFin, Pageable pageable);
     VentaResponse cancelar(Integer id, CancelarVentaRequest request);
     CodigoAutorizacionResponse generarCodigo(Integer id);
     VentaResponse solicitarCancelacion(Integer id, String motivo);

@@ -32,6 +32,9 @@ public class MovimientoCredito {
     @Column(nullable = false)
     private Double monto;
 
+    private Double interesAplicado;
+    private Double capitalAplicado;
+
     @Column(nullable = false)
     private Double saldoAnterior;
 

@@ -21,6 +21,9 @@ public record CotizacionResponse(
         String tipoVenta,
         Integer plazoMeses,
         Double porcentajeInteres,
+        String periodicidad,
+        Integer numeroParcialidades,
+        java.time.LocalDate fechaPrimerPago,
         String nota,
         List<CotizacionDetalleResponse> detalles
 ) {}

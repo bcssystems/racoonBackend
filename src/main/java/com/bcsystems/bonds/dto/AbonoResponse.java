@@ -11,5 +11,15 @@ public record AbonoResponse(
         LocalDateTime fecha,
         String usuario,
         String metodoPago,
-        List<AbonoPagoResponse> pagos
+        List<AbonoPagoResponse> pagos,
+        Double saldoAnterior,
+        Double saldoNuevo,
+        String estadoCredito,
+        String clienteNombre,
+        Integer idVenta,
+        String folioCredito,
+        Double interesPagado,
+        Double capitalPagado,
+        Double saldoInteres,
+        Double saldoCapital
 ) {}

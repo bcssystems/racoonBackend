@@ -50,6 +50,12 @@ public class CreditoController {
         return ResponseEntity.ok(creditoService.estadoCuenta(id));
     }
 
+    @GetMapping("/{id}/parcialidades")
+    @PreAuthorize("hasAuthority('CREDITOS_VER')")
+    public ResponseEntity<List<ParcialidadResponse>> listarParcialidades(@PathVariable Integer id) {
+        return ResponseEntity.ok(creditoService.listarParcialidades(id));
+    }
+
     @PostMapping("/abonos")
     @PreAuthorize("hasAuthority('CREDITOS_ABONAR')")
     public ResponseEntity<AbonoResponse> registrarAbono(@Valid @RequestBody AbonoRequest request) {
@@ -60,5 +66,13 @@ public class CreditoController {
     @PreAuthorize("hasAuthority('CREDITOS_ABONAR')")
     public ResponseEntity<List<AbonoResponse>> abonarATodas(@Valid @RequestBody AbonoGeneralRequest request) {
         return ResponseEntity.ok(creditoService.abonarATodas(request));
+    }
+
+    @PostMapping("/{id}/condonar-intereses")
+    @PreAuthorize("hasAuthority('CREDITOS_CONDONAR_INTERES')")
+    public ResponseEntity<Void> condonarIntereses(@PathVariable Integer id,
+                                                   @Valid @RequestBody CondonacionInteresRequest request) {
+        creditoService.condonarIntereses(id, request);
+        return ResponseEntity.ok().build();
     }
 }

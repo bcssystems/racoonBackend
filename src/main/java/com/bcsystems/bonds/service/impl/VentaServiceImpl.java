@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -35,6 +37,7 @@ public class VentaServiceImpl implements VentaService {
     private final VentaPagoRepository ventaPagoRepository;
     private final TipoPagoRepository tipoPagoRepository;
     private final CreditoRepository creditoRepository;
+    private final ParcialidadCreditoRepository parcialidadCreditoRepository;
     private final MovimientoCreditoRepository movimientoCreditoRepository;
     private final ReservaProductoRepository reservaProductoRepository;
     private final CarritoItemRapidoRepository carritoItemRapidoRepository;
@@ -87,6 +90,8 @@ public class VentaServiceImpl implements VentaService {
                     .producto(dto.idProducto() != null
                             ? productoRepository.findById(dto.idProducto()).orElse(null) : null)
                     .descripcion(dto.descripcion())
+                    .tipoDetalle(dto.tipoDetalle() != null ? dto.tipoDetalle() : (dto.idItemRapido() != null ? "RAPIDO" : (dto.idProducto() == null ? "ENVIO" : "PRODUCTO")))
+                    .idItemRapido(dto.idItemRapido())
                     .cantidad(dto.cantidad())
                      .precioUnitario(dto.precioUnitario())
                      .subtotal(dto.subtotal())
@@ -99,6 +104,9 @@ public class VentaServiceImpl implements VentaService {
             if (detalle.getProducto() != null && detalle.getProducto().getCostoPromedio() != null
                     && detalle.getPrecioUnitario() <= detalle.getProducto().getCostoPromedio()) {
                 throw new InvalidEntryException("El precio de venta debe ser mayor al costo de " + detalle.getProducto().getNombre());
+            }
+            if (detalle.getProducto() != null && (detalle.getPrecioUnitario() == null || detalle.getPrecioUnitario() <= 0)) {
+                throw new InvalidEntryException("El precio de venta debe estar configurado para " + detalle.getProducto().getNombre());
             }
             subtotalEfectivo += dto.subtotal();
             detalles.add(ventaDetalleRepository.save(detalle));
@@ -217,8 +225,17 @@ public class VentaServiceImpl implements VentaService {
             }
 
             double porcentajeInteres = request.porcentajeInteres() != null ? request.porcentajeInteres() : 0;
-            double montoOriginal = montoCredito + (montoCredito * porcentajeInteres / 100);
-            int plazoMeses = request.plazoMeses() != null ? request.plazoMeses() : 1;
+            if (porcentajeInteres < 0) throw new InvalidEntryException("El interés no puede ser negativo");
+            String periodicidad = normalizarPeriodicidad(request.periodicidad());
+            int numeroParcialidades = request.numeroParcialidades() != null && request.numeroParcialidades() > 0
+                    ? request.numeroParcialidades() : (request.plazoMeses() != null && request.plazoMeses() > 0 ? request.plazoMeses() : 1);
+            double mesesEquivalentes = mesesEquivalentes(periodicidad, numeroParcialidades);
+            double interesTotal = montoCredito * porcentajeInteres / 100 * mesesEquivalentes;
+            double montoOriginal = montoCredito + interesTotal;
+            int plazoMeses = (int) Math.ceil(mesesEquivalentes);
+            LocalDate fechaPrimerPago = request.fechaPrimerPago() != null
+                    ? request.fechaPrimerPago() : fechaInicialParcialidad(periodicidad);
+            LocalDateTime fechaVencimiento = fechaParcialidad(fechaPrimerPago, periodicidad, numeroParcialidades - 1);
 
             Credito credito = Credito.builder()
                     .venta(venta)
@@ -228,17 +245,27 @@ public class VentaServiceImpl implements VentaService {
                     .saldoPendiente(montoOriginal)
                     .plazoMeses(plazoMeses)
                     .porcentajeInteres(porcentajeInteres)
-                    .fechaVencimiento(LocalDateTime.now().plusMonths(plazoMeses))
+                    .capitalFinanciado(montoCredito)
+                    .interesTotal(interesTotal)
+                    .saldoCapital(montoCredito)
+                    .saldoInteres(interesTotal)
+                    .periodicidad(periodicidad)
+                    .numeroParcialidades(numeroParcialidades)
+                    .fechaPrimerPago(fechaPrimerPago.atStartOfDay())
+                    .fechaVencimiento(fechaVencimiento)
                     .estado(EstadoCredito.ACTIVO)
                     .fechaCreacion(LocalDateTime.now())
                     .usuario(usuario)
                     .build();
             credito = creditoRepository.save(credito);
+            crearParcialidades(credito, montoCredito, interesTotal, numeroParcialidades, periodicidad, fechaPrimerPago);
 
             MovimientoCredito mov = MovimientoCredito.builder()
                     .credito(credito)
                     .tipo(TipoMovimientoCredito.CARGO)
                     .monto(montoOriginal)
+                    .interesAplicado(porcentajeInteres > 0 ? montoOriginal - montoCredito : 0.0)
+                    .capitalAplicado(montoCredito)
                     .saldoAnterior(cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0)
                     .saldoNuevo((cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0) + montoOriginal)
                     .descripcion("Cargo por venta a credito #" + venta.getIdVenta())
@@ -281,10 +308,10 @@ public class VentaServiceImpl implements VentaService {
     }
 
     @Override
-    public Page<VentaResponse> listar(Integer idSucursal, Integer idCaja, String estado,
+    public Page<VentaResponse> listar(Integer idSucursal, Integer idCaja, String estado, String tipoDetalle,
                                        LocalDateTime fechaInicio, LocalDateTime fechaFin, Pageable pageable) {
         EstadoVenta estadoEnum = estado != null ? EstadoVenta.valueOf(estado) : null;
-        return ventaRepository.listarConFiltros(idSucursal, idCaja, estadoEnum, fechaInicio, fechaFin, pageable)
+        return ventaRepository.listarConFiltros(idSucursal, idCaja, estadoEnum, tipoDetalle, fechaInicio, fechaFin, pageable)
                 .map(v -> toResponse(v, ventaDetalleRepository.findByVentaIdVenta(v.getIdVenta())));
     }
 
@@ -772,6 +799,62 @@ public class VentaServiceImpl implements VentaService {
                 .orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
     }
 
+    private String normalizarPeriodicidad(String periodicidad) {
+        if (periodicidad == null || periodicidad.isBlank()) return "MENSUAL";
+        String value = periodicidad.trim().toUpperCase();
+        if (!List.of("MENSUAL", "QUINCENAL", "SEMANAL").contains(value)) {
+            throw new InvalidEntryException("La periodicidad debe ser MENSUAL, QUINCENAL o SEMANAL");
+        }
+        return value;
+    }
+
+    private double mesesEquivalentes(String periodicidad, int parcialidades) {
+        return switch (periodicidad) {
+            case "QUINCENAL" -> parcialidades / 2.0;
+            case "SEMANAL" -> parcialidades / 4.0;
+            default -> parcialidades;
+        };
+    }
+
+    private LocalDate fechaInicialParcialidad(String periodicidad) {
+        LocalDate hoy = LocalDate.now();
+        return switch (periodicidad) {
+            case "QUINCENAL" -> hoy.plusDays(15);
+            case "SEMANAL" -> hoy.plusDays(7);
+            default -> hoy.plusMonths(1);
+        };
+    }
+
+    private LocalDateTime fechaParcialidad(LocalDate primera, String periodicidad, int indice) {
+        long dias = switch (periodicidad) {
+            case "QUINCENAL" -> 15L;
+            case "SEMANAL" -> 7L;
+            default -> 0L;
+        };
+        return dias > 0 ? primera.plusDays(dias * indice).atStartOfDay() : primera.plusMonths(indice).atStartOfDay();
+    }
+
+    private void crearParcialidades(Credito credito, double capital, double interes, int cantidad,
+                                    String periodicidad, LocalDate primera) {
+        double capitalBase = Math.floor((capital / cantidad) * 100.0) / 100.0;
+        double interesBase = Math.floor((interes / cantidad) * 100.0) / 100.0;
+        for (int i = 1; i <= cantidad; i++) {
+            double capitalParcial = i == cantidad ? capital - capitalBase * (cantidad - 1) : capitalBase;
+            double interesParcial = i == cantidad ? interes - interesBase * (cantidad - 1) : interesBase;
+            parcialidadCreditoRepository.save(ParcialidadCredito.builder()
+                    .credito(credito)
+                    .numero(i)
+                    .fechaVencimiento(fechaParcialidad(primera, periodicidad, i - 1))
+                    .capitalProgramado(redondear(capitalParcial))
+                    .interesProgramado(redondear(interesParcial))
+                    .build());
+        }
+    }
+
+    private double redondear(double valor) {
+        return Math.round(valor * 100.0) / 100.0;
+    }
+
     private String generarFolioPagaré() {
         String prefix = "PAGARE-";
         int num = 1;
@@ -796,6 +879,8 @@ public class VentaServiceImpl implements VentaService {
                         d.getProducto() != null ? d.getProducto().getSku() : null,
                         d.getProducto() != null ? d.getProducto().getNombre() : null,
                         d.getDescripcion(),
+                        d.getTipoDetalle(),
+                        d.getIdItemRapido(),
                         d.getCantidad(),
                         d.getProducto() != null ? d.getProducto().getUnidadMedida() : null,
                          d.getPrecioUnitario(), d.getSubtotal(), d.getCostoUnitario(),
@@ -827,6 +912,13 @@ public class VentaServiceImpl implements VentaService {
                 credito != null && v.getFolioPagare() == null ? credito.getFolio() : v.getFolioPagare(),
                 credito != null ? credito.getPlazoMeses() : null,
                 credito != null ? credito.getPorcentajeInteres() : null,
+                credito != null ? credito.getPeriodicidad() : null,
+                credito != null ? credito.getNumeroParcialidades() : null,
+                credito != null ? credito.getFechaPrimerPago() : null,
+                credito != null ? credito.getCapitalFinanciado() : null,
+                credito != null ? credito.getInteresTotal() : null,
+                credito != null ? credito.getSaldoCapital() : null,
+                credito != null ? credito.getSaldoInteres() : null,
                 v.getMotivoCancelacion(),
                 v.getSolicitanteCancelacion() != null ? v.getSolicitanteCancelacion().getUsuario() : null,
                 v.getFechaSolicitudCancelacion(),

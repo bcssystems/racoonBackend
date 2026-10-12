@@ -28,6 +28,9 @@ public class Abono {
     @Column(nullable = false)
     private Double monto;
 
+    private Double interesPagado;
+    private Double capitalPagado;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 15)
     private TipoAbono tipo;

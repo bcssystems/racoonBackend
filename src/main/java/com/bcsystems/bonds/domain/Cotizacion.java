@@ -58,6 +58,10 @@ public class Cotizacion {
 
     private Integer plazoMeses;
 
+    private String periodicidad;
+    private Integer numeroParcialidades;
+    private java.time.LocalDate fechaPrimerPago;
+
     @Builder.Default
     private Double porcentajeInteres = 0.0;
 

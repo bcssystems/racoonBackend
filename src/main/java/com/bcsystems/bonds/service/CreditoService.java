@@ -14,5 +14,9 @@ public interface CreditoService {
 
     List<AbonoResponse> abonarATodas(AbonoGeneralRequest request);
 
+    void condonarIntereses(Integer idCredito, CondonacionInteresRequest request);
+
+    List<ParcialidadResponse> listarParcialidades(Integer idCredito);
+
     EstadoCuentaResponse estadoCuenta(Integer idCredito);
 }

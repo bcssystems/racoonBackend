@@ -16,6 +16,9 @@ public record VentaRequest(
         String nota,
         Integer plazoMeses,
         Double porcentajeInteres,
+        String periodicidad,
+        Integer numeroParcialidades,
+        java.time.LocalDate fechaPrimerPago,
         @NotEmpty List<VentaDetalleRequest> detalles,
         List<VentaPagoRequest> pagos,
         Double montoCredito

@@ -58,6 +58,9 @@ public class CotizacionServiceImpl implements CotizacionService {
                 .tipoVenta(request.tipoVenta() != null ? request.tipoVenta() : "CONTADO")
                 .plazoMeses(request.plazoMeses())
                 .porcentajeInteres(request.porcentajeInteres() != null ? request.porcentajeInteres() : 0.0)
+                .periodicidad(request.periodicidad())
+                .numeroParcialidades(request.numeroParcialidades())
+                .fechaPrimerPago(request.fechaPrimerPago())
                 .nota(request.nota())
                 .estado(EstadoCotizacion.VIGENTE)
                 .fechaCreacion(LocalDateTime.now())
@@ -122,6 +125,9 @@ public class CotizacionServiceImpl implements CotizacionService {
         cotizacion.setTipoVenta(request.tipoVenta() != null ? request.tipoVenta() : "CONTADO");
         cotizacion.setPlazoMeses(request.plazoMeses());
         cotizacion.setPorcentajeInteres(request.porcentajeInteres() != null ? request.porcentajeInteres() : 0.0);
+        cotizacion.setPeriodicidad(request.periodicidad());
+        cotizacion.setNumeroParcialidades(request.numeroParcialidades());
+        cotizacion.setFechaPrimerPago(request.fechaPrimerPago());
         cotizacion.setNota(request.nota());
         cotizacion.setFechaExpiracion(LocalDateTime.now().plusDays(request.diasVigencia()));
 
@@ -225,6 +231,9 @@ public class CotizacionServiceImpl implements CotizacionService {
                 c.getTipoVenta(),
                 c.getPlazoMeses(),
                 c.getPorcentajeInteres(),
+                c.getPeriodicidad(),
+                c.getNumeroParcialidades(),
+                c.getFechaPrimerPago(),
                 c.getNota(),
                 detalles
         );

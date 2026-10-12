@@ -27,6 +27,11 @@ public class VentaDetalle {
     @Column(length = 300)
     private String descripcion;
 
+    @Column(length = 15)
+    private String tipoDetalle;
+
+    private Integer idItemRapido;
+
     @Column(nullable = false)
     private Integer cantidad;
 

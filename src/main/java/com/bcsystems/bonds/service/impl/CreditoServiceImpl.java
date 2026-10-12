@@ -22,6 +22,7 @@ public class CreditoServiceImpl implements CreditoService {
 
     private final CreditoRepository creditoRepository;
     private final MovimientoCreditoRepository movimientoCreditoRepository;
+    private final ParcialidadCreditoRepository parcialidadCreditoRepository;
     private final AbonoRepository abonoRepository;
     private final AbonoPagoRepository abonoPagoRepository;
     private final ClienteRepository clienteRepository;
@@ -67,12 +68,23 @@ public class CreditoServiceImpl implements CreditoService {
         List<TipoPago> tiposPago = resolverTiposPago(request.pagos(), request.idTipoPago());
         Caja caja = resolverCaja(request.idCaja());
 
+        prepararSaldosCredito(credito);
         double saldoAnterior = credito.getSaldoPendiente();
-        double saldoNuevo = saldoAnterior - request.monto();
+        if (tipo == TipoAbono.LIQUIDACION && request.monto() + 0.01 < saldoAnterior) {
+            throw new InvalidEntryException("La liquidación debe cubrir el saldo total del crédito");
+        }
+        double interesPagado = Math.min(request.monto(), credito.getSaldoInteres());
+        double capitalPagado = request.monto() - interesPagado;
+        double saldoInteresNuevo = credito.getSaldoInteres() - interesPagado;
+        double saldoCapitalNuevo = credito.getSaldoCapital() - capitalPagado;
+        double saldoNuevo = saldoInteresNuevo + saldoCapitalNuevo;
+        if (saldoNuevo <= 0.01) tipo = TipoAbono.LIQUIDACION;
 
         Abono abono = Abono.builder()
                 .credito(credito)
                 .monto(request.monto())
+                .interesPagado(interesPagado)
+                .capitalPagado(capitalPagado)
                 .tipo(tipo)
                 .fecha(LocalDateTime.now())
                 .usuario(usuario)
@@ -91,6 +103,8 @@ public class CreditoServiceImpl implements CreditoService {
                 .credito(credito)
                 .tipo(tipoMov)
                 .monto(request.monto())
+                .interesAplicado(interesPagado)
+                .capitalAplicado(capitalPagado)
                 .saldoAnterior(saldoAnterior)
                 .saldoNuevo(saldoNuevo)
                 .descripcion(tipo == TipoAbono.LIQUIDACION ? "Liquidacion total" : "Abono parcial")
@@ -100,6 +114,8 @@ public class CreditoServiceImpl implements CreditoService {
                 .build();
         movimientoCreditoRepository.save(mov);
 
+        credito.setSaldoInteres(saldoInteresNuevo);
+        credito.setSaldoCapital(saldoCapitalNuevo);
         credito.setSaldoPendiente(saldoNuevo);
         if (tipo == TipoAbono.LIQUIDACION || saldoNuevo <= 0) {
             credito.setEstado(EstadoCredito.PAGADO);
@@ -111,7 +127,8 @@ public class CreditoServiceImpl implements CreditoService {
         cliente.setSaldoActual(cliente.getSaldoActual() - request.monto());
         clienteRepository.save(cliente);
 
-        return toAbonoResponse(abono, usuario);
+        aplicarPagoParcialidades(credito, interesPagado, capitalPagado);
+        return toAbonoResponse(abono, usuario, saldoAnterior, saldoNuevo);
     }
 
     @Override
@@ -146,14 +163,21 @@ public class CreditoServiceImpl implements CreditoService {
                 montoAbono = credito.getSaldoPendiente();
             }
 
+            prepararSaldosCredito(credito);
             double saldoAnterior = credito.getSaldoPendiente();
-            double saldoNuevo = saldoAnterior - montoAbono;
+            double interesPagado = Math.min(montoAbono, credito.getSaldoInteres());
+            double capitalPagado = montoAbono - interesPagado;
+            double saldoInteresNuevo = credito.getSaldoInteres() - interesPagado;
+            double saldoCapitalNuevo = credito.getSaldoCapital() - capitalPagado;
+            double saldoNuevo = saldoInteresNuevo + saldoCapitalNuevo;
 
             TipoAbono tipo = saldoNuevo <= 0 ? TipoAbono.LIQUIDACION : TipoAbono.PARCIAL;
 
             Abono abono = Abono.builder()
                     .credito(credito)
                     .monto(montoAbono)
+                    .interesPagado(interesPagado)
+                    .capitalPagado(capitalPagado)
                     .tipo(tipo)
                     .fecha(LocalDateTime.now())
                     .usuario(usuario)
@@ -172,6 +196,8 @@ public class CreditoServiceImpl implements CreditoService {
                     .credito(credito)
                     .tipo(tipoMov)
                     .monto(montoAbono)
+                    .interesAplicado(interesPagado)
+                    .capitalAplicado(capitalPagado)
                     .saldoAnterior(saldoAnterior)
                     .saldoNuevo(saldoNuevo)
                     .descripcion("Abono general - distribucion proporcional")
@@ -182,12 +208,15 @@ public class CreditoServiceImpl implements CreditoService {
             movimientoCreditoRepository.save(mov);
 
             credito.setSaldoPendiente(saldoNuevo);
+            credito.setSaldoInteres(saldoInteresNuevo);
+            credito.setSaldoCapital(saldoCapitalNuevo);
             if (tipo == TipoAbono.LIQUIDACION || saldoNuevo <= 0) {
                 credito.setEstado(EstadoCredito.PAGADO);
             }
             creditoRepository.save(credito);
+            aplicarPagoParcialidades(credito, interesPagado, capitalPagado);
 
-            resultados.add(toAbonoResponse(abono, usuario));
+            resultados.add(toAbonoResponse(abono, usuario, saldoAnterior, saldoNuevo));
         }
 
         // Update cliente saldoActual
@@ -232,6 +261,48 @@ public class CreditoServiceImpl implements CreditoService {
                 abonos, movimientos, titular, tasaMora);
     }
 
+    @Override
+    @Transactional
+    public void condonarIntereses(Integer idCredito, CondonacionInteresRequest request) {
+        Credito credito = creditoRepository.findById(idCredito)
+                .orElseThrow(() -> new NotFoundException("Credito no encontrado"));
+        prepararSaldosCredito(credito);
+        if (request.monto() <= 0) throw new InvalidEntryException("El monto debe ser mayor a cero");
+        if (request.monto() > credito.getSaldoInteres() + 0.001) {
+            throw new InvalidEntryException("El monto excede el saldo de intereses");
+        }
+
+        double saldoAnterior = credito.getSaldoPendiente();
+        aplicarCondonacionParcialidades(credito, request.monto());
+        credito.setSaldoInteres(credito.getSaldoInteres() - request.monto());
+        credito.setSaldoPendiente(credito.getSaldoCapital() + credito.getSaldoInteres());
+        if (credito.getSaldoPendiente() <= 0.01) credito.setEstado(EstadoCredito.PAGADO);
+        creditoRepository.save(credito);
+
+        Persona usuario = obtenerPersonaActual();
+        movimientoCreditoRepository.save(MovimientoCredito.builder()
+                .credito(credito)
+                .tipo(TipoMovimientoCredito.AJUSTE)
+                .monto(request.monto())
+                .interesAplicado(-request.monto())
+                .capitalAplicado(0.0)
+                .saldoAnterior(saldoAnterior)
+                .saldoNuevo(credito.getSaldoPendiente())
+                .descripcion("Condonacion de intereses: " + request.motivo())
+                .fecha(LocalDateTime.now())
+                .usuario(usuario)
+                .build());
+    }
+
+    @Override
+    public List<ParcialidadResponse> listarParcialidades(Integer idCredito) {
+        return parcialidadCreditoRepository.findByCreditoIdCreditoOrderByNumeroAsc(idCredito).stream()
+                .map(p -> new ParcialidadResponse(p.getIdParcialidad(), p.getNumero(), p.getFechaVencimiento(),
+                        p.getCapitalProgramado(), p.getInteresProgramado(), p.getCapitalPagado(),
+                        p.getInteresPagado(), p.getEstado()))
+                .toList();
+    }
+
     private Persona obtenerPersonaActual() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return personaRepository.findByUsuario(username)
@@ -239,6 +310,10 @@ public class CreditoServiceImpl implements CreditoService {
     }
 
     private CreditoResponse toCreditoResponse(Credito c) {
+        double capital = c.getCapitalFinanciado() != null ? c.getCapitalFinanciado() : c.getMontoOriginal();
+        double interes = c.getInteresTotal() != null ? c.getInteresTotal() : 0.0;
+        double saldoCapital = c.getSaldoCapital() != null ? c.getSaldoCapital() : c.getSaldoPendiente();
+        double saldoInteres = c.getSaldoInteres() != null ? c.getSaldoInteres() : 0.0;
         return new CreditoResponse(
                 c.getIdCredito(), c.getVenta().getIdVenta(),
                 c.getVenta().getIdVenta(),
@@ -247,6 +322,8 @@ public class CreditoServiceImpl implements CreditoService {
                 c.getCliente().getNombre() + " " + c.getCliente().getApellidoPaterno(),
                 c.getMontoOriginal(), c.getSaldoPendiente(),
                 c.getPlazoMeses(), c.getPorcentajeInteres(),
+                c.getPeriodicidad(), c.getNumeroParcialidades(), c.getFechaPrimerPago(),
+                capital, interes, saldoCapital, saldoInteres,
                 c.getFechaVencimiento(), c.getEstado(), c.getFechaCreacion(),
                 c.getVenta().getNota());
     }
@@ -254,7 +331,7 @@ public class CreditoServiceImpl implements CreditoService {
     private MovimientoCreditoResponse toMovimientoResponse(MovimientoCredito m) {
         return new MovimientoCreditoResponse(
                 m.getIdMovimiento(), m.getCredito().getIdCredito(),
-                m.getTipo(), m.getMonto(),
+                m.getTipo(), m.getMonto(), m.getInteresAplicado(), m.getCapitalAplicado(),
                 m.getSaldoAnterior(), m.getSaldoNuevo(),
                 m.getDescripcion(), m.getFecha(),
                 m.getUsuario().getUsuario(),
@@ -338,8 +415,14 @@ public class CreditoServiceImpl implements CreditoService {
     }
 
     private AbonoResponse toAbonoResponse(Abono a, Persona usuario) {
+        return toAbonoResponse(a, usuario, null, null);
+    }
+
+    private AbonoResponse toAbonoResponse(Abono a, Persona usuario, Double saldoAnterior, Double saldoNuevo) {
+        Credito credito = a.getCredito();
+        Cliente cliente = credito.getCliente();
         return new AbonoResponse(
-                a.getIdAbono(), a.getCredito().getIdCredito(),
+                a.getIdAbono(), credito.getIdCredito(),
                 a.getMonto(), a.getTipo().name(),
                 a.getFecha(), usuario != null ? usuario.getUsuario() : a.getUsuario().getUsuario(),
                 a.getTipoPago() != null ? a.getTipoPago().getNombre() : null,
@@ -350,7 +433,77 @@ public class CreditoServiceImpl implements CreditoService {
                                 p.getTipoPago().getNombre(),
                                 p.getMonto(),
                                 p.getReferencia()))
-                        .toList());
+                        .toList(),
+                saldoAnterior,
+                saldoNuevo,
+                credito.getEstado().name(),
+                cliente.getNombre() + " " + (cliente.getApellidoPaterno() != null ? cliente.getApellidoPaterno() : ""),
+                credito.getVenta().getIdVenta(),
+                credito.getFolio(),
+                a.getInteresPagado(), a.getCapitalPagado(),
+                credito.getSaldoInteres(), credito.getSaldoCapital());
+    }
+
+    private void prepararSaldosCredito(Credito credito) {
+        if (credito.getSaldoCapital() == null) {
+            credito.setSaldoCapital(credito.getSaldoPendiente() != null ? credito.getSaldoPendiente() : 0.0);
+        }
+        if (credito.getSaldoInteres() == null) credito.setSaldoInteres(0.0);
+        if (credito.getCapitalFinanciado() == null) credito.setCapitalFinanciado(credito.getSaldoCapital());
+        if (credito.getInteresTotal() == null) credito.setInteresTotal(credito.getSaldoInteres());
+        if (parcialidadCreditoRepository.findByCreditoIdCreditoOrderByNumeroAsc(credito.getIdCredito()).isEmpty()) {
+            parcialidadCreditoRepository.save(ParcialidadCredito.builder()
+                    .credito(credito)
+                    .numero(1)
+                    .fechaVencimiento(credito.getFechaVencimiento())
+                    .capitalProgramado(credito.getSaldoCapital())
+                    .interesProgramado(credito.getSaldoInteres())
+                    .build());
+        }
+    }
+
+    private void aplicarPagoParcialidades(Credito credito, double interes, double capital) {
+        List<ParcialidadCredito> parcialidades = parcialidadCreditoRepository
+                .findByCreditoIdCreditoOrderByNumeroAsc(credito.getIdCredito());
+        double interesRestante = interes;
+        double capitalRestante = capital;
+        for (ParcialidadCredito parcialidad : parcialidades) {
+            double interesPendiente = Math.max(0, parcialidad.getInteresProgramado() - parcialidad.getInteresPagado());
+            double aplicarInteres = Math.min(interesRestante, interesPendiente);
+            parcialidad.setInteresPagado(parcialidad.getInteresPagado() + aplicarInteres);
+            interesRestante -= aplicarInteres;
+
+            double capitalPendiente = Math.max(0, parcialidad.getCapitalProgramado() - parcialidad.getCapitalPagado());
+            double aplicarCapital = Math.min(capitalRestante, capitalPendiente);
+            parcialidad.setCapitalPagado(parcialidad.getCapitalPagado() + aplicarCapital);
+            capitalRestante -= aplicarCapital;
+
+            if (parcialidad.getCapitalPagado() + 0.001 >= parcialidad.getCapitalProgramado()
+                    && parcialidad.getInteresPagado() + 0.001 >= parcialidad.getInteresProgramado()) {
+                parcialidad.setEstado("PAGADA");
+            } else if (parcialidad.getCapitalPagado() > 0 || parcialidad.getInteresPagado() > 0) {
+                parcialidad.setEstado("PARCIAL");
+            }
+            parcialidadCreditoRepository.save(parcialidad);
+            if (interesRestante <= 0.001 && capitalRestante <= 0.001) break;
+        }
+    }
+
+    private void aplicarCondonacionParcialidades(Credito credito, double monto) {
+        double restante = monto;
+        for (ParcialidadCredito parcialidad : parcialidadCreditoRepository
+                .findByCreditoIdCreditoOrderByNumeroAsc(credito.getIdCredito())) {
+            double pendiente = Math.max(0, parcialidad.getInteresProgramado() - parcialidad.getInteresPagado());
+            double condonar = Math.min(restante, pendiente);
+            parcialidad.setInteresProgramado(parcialidad.getInteresProgramado() - condonar);
+            if (parcialidad.getCapitalPagado() + 0.001 >= parcialidad.getCapitalProgramado()
+                    && parcialidad.getInteresPagado() + 0.001 >= parcialidad.getInteresProgramado()) {
+                parcialidad.setEstado("PAGADA");
+            }
+            parcialidadCreditoRepository.save(parcialidad);
+            restante -= condonar;
+            if (restante <= 0.001) break;
+        }
     }
 
     private Caja resolverCaja(Integer idCaja) {
