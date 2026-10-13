@@ -3,6 +3,7 @@ package com.bcsystems.bonds.service;
 import com.bcsystems.bonds.dto.*;
 
 import java.util.List;
+import java.time.LocalDate;
 
 public interface CreditoService {
 
@@ -19,4 +20,12 @@ public interface CreditoService {
     List<ParcialidadResponse> listarParcialidades(Integer idCredito);
 
     EstadoCuentaResponse estadoCuenta(Integer idCredito);
+
+    List<CobradorResponse> listarCobradores();
+
+    void asignarCobrador(Integer idCredito, Integer idPersona);
+
+    List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, String estado);
+
+    AbonoResponse registrarAbonoCobranza(AbonoRequest request);
 }

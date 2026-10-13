@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalDate;
 
 @Service
 @RequiredArgsConstructor
@@ -303,6 +304,79 @@ public class CreditoServiceImpl implements CreditoService {
                 .toList();
     }
 
+    @Override
+    public List<CobradorResponse> listarCobradores() {
+        return personaRepository.findByActivaTrueOrderByNombreAsc().stream()
+                .map(p -> new CobradorResponse(p.getIdPersona(), p.getNombre(), p.getApellido(), p.getUsuario()))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void asignarCobrador(Integer idCredito, Integer idPersona) {
+        Credito credito = creditoRepository.findById(idCredito)
+                .orElseThrow(() -> new NotFoundException("Credito no encontrado"));
+        Persona cobrador = idPersona == null ? null : personaRepository.findById(idPersona)
+                .orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+        if (cobrador != null && !Boolean.TRUE.equals(cobrador.getActiva())) {
+            throw new InvalidEntryException("El usuario seleccionado está inactivo");
+        }
+        credito.setCobrador(cobrador);
+        creditoRepository.save(credito);
+    }
+
+    @Override
+    public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, String estado) {
+        Persona actual = obtenerPersonaActual();
+        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS") || tieneAutoridad("CREDITOS_ASIGNAR");
+        Integer cobradorFiltro = verTodas ? idCobrador : actual.getIdPersona();
+        LocalDate inicio = desde != null ? desde : LocalDate.now();
+        LocalDate fin = hasta != null ? hasta : inicio.plusDays(30);
+        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado)
+                .stream().map(this::toCobranzaResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public AbonoResponse registrarAbonoCobranza(AbonoRequest request) {
+        Credito credito = creditoRepository.findById(request.idCredito())
+                .orElseThrow(() -> new NotFoundException("Credito no encontrado"));
+        Persona actual = obtenerPersonaActual();
+        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS") || tieneAutoridad("CREDITOS_ASIGNAR");
+        if (!verTodas && (credito.getCobrador() == null || !credito.getCobrador().getIdPersona().equals(actual.getIdPersona()))) {
+            throw new InvalidEntryException("El credito no está asignado a este usuario");
+        }
+        if (request.idCaja() == null) {
+            throw new InvalidEntryException("Debe seleccionar una caja abierta para registrar la cobranza");
+        }
+        return registrarAbono(request);
+    }
+
+    private boolean tieneAutoridad(String autoridad) {
+        return SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> autoridad.equals(a.getAuthority()));
+    }
+
+    private CobranzaResponse toCobranzaResponse(ParcialidadCredito p) {
+        Credito c = p.getCredito();
+        Cliente cliente = c.getCliente();
+        double programado = (p.getCapitalProgramado() == null ? 0 : p.getCapitalProgramado())
+                + (p.getInteresProgramado() == null ? 0 : p.getInteresProgramado());
+        double pagado = (p.getCapitalPagado() == null ? 0 : p.getCapitalPagado())
+                + (p.getInteresPagado() == null ? 0 : p.getInteresPagado());
+        String nombre = cliente.getNombre() + " " + (cliente.getApellidoPaterno() == null ? "" : cliente.getApellidoPaterno());
+        String direccion = cliente.getDireccion();
+        if (direccion == null || direccion.isBlank()) {
+            direccion = String.join(", ", java.util.stream.Stream.of(cliente.getCalle(), cliente.getNumExt(), cliente.getColonia(), cliente.getMunicipio(), cliente.getEstado(), cliente.getCp())
+                    .filter(v -> v != null && !v.isBlank()).toList());
+        }
+        return new CobranzaResponse(p.getIdParcialidad(), p.getNumero(), p.getFechaVencimiento(), programado, pagado,
+                Math.max(0, programado - pagado), p.getEstado(), c.getIdCredito(), c.getFolio(), cliente.getIdCliente(),
+                nombre, cliente.getTelefono(), direccion, c.getPeriodicidad(), c.getNumeroParcialidades(),
+                c.getCobrador() == null ? null : c.getCobrador().getIdPersona(),
+                c.getCobrador() == null ? null : c.getCobrador().getNombre() + " " + c.getCobrador().getApellido());
+    }
+
     private Persona obtenerPersonaActual() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return personaRepository.findByUsuario(username)
@@ -325,7 +399,9 @@ public class CreditoServiceImpl implements CreditoService {
                 c.getPeriodicidad(), c.getNumeroParcialidades(), c.getFechaPrimerPago(),
                 capital, interes, saldoCapital, saldoInteres,
                 c.getFechaVencimiento(), c.getEstado(), c.getFechaCreacion(),
-                c.getVenta().getNota());
+                c.getVenta().getNota(),
+                c.getCobrador() == null ? null : c.getCobrador().getIdPersona(),
+                c.getCobrador() == null ? null : c.getCobrador().getNombre() + " " + c.getCobrador().getApellido());
     }
 
     private MovimientoCreditoResponse toMovimientoResponse(MovimientoCredito m) {

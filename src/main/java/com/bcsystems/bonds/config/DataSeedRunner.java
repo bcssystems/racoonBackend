@@ -97,7 +97,8 @@ public class DataSeedRunner implements CommandLineRunner {
                 "CLIENTES_VER", "CLIENTES_CREAR",
                 "COTIZACIONES_VER", "COTIZACIONES_CREAR", "COTIZACIONES_CONVERTIR",
                 "GASTOS_VER", "GASTOS_CREAR",
-                "CREDITOS_VER", "CREDITOS_ABONAR",
+                 "CREDITOS_VER", "CREDITOS_ABONAR", "CREDITOS_ASIGNAR",
+                 "COBRANZA_VER", "COBRANZA_ABONAR", "COBRANZA_ASIGNAR", "COBRANZA_VER_TODAS",
                 "CAJAS_VER", "CAJAS_APERTURA", "CAJAS_CIERRE", "CAJAS_CORTE", "CAJAS_MOVIMIENTO",
                 "HISTORIAL_VENTAS_VER",
                 "PRODUCTOS_VER",
@@ -285,7 +286,14 @@ public class DataSeedRunner implements CommandLineRunner {
         map.put("CREDITOS", List.of(
                 new String[]{"CREDITOS_VER", "Ver Creditos"},
                 new String[]{"CREDITOS_ABONAR", "Registrar Abonos"},
+                new String[]{"CREDITOS_ASIGNAR", "Asignar cobradores"},
                 new String[]{"CREDITOS_CONDONAR_INTERES", "Condonar intereses"}
+        ));
+        map.put("COBRANZA", List.of(
+                new String[]{"COBRANZA_VER", "Ver cobranza"},
+                new String[]{"COBRANZA_ABONAR", "Registrar cobranza"},
+                new String[]{"COBRANZA_ASIGNAR", "Asignar cobradores"},
+                new String[]{"COBRANZA_VER_TODAS", "Ver todas las cobranzas"}
         ));
         map.put("SUCURSALES", List.of(
                 new String[]{"SUCURSALES_VER", "Ver Sucursales"},

@@ -70,6 +70,10 @@ public class Credito {
     @JoinColumn(name = "id_usuario", nullable = false)
     private Persona usuario;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_cobrador")
+    private Persona cobrador;
+
     @OneToMany(mappedBy = "credito", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<ParcialidadCredito> parcialidades = new ArrayList<>();

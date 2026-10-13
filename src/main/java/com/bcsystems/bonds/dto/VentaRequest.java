@@ -19,6 +19,7 @@ public record VentaRequest(
         String periodicidad,
         Integer numeroParcialidades,
         java.time.LocalDate fechaPrimerPago,
+        Integer idCobrador,
         @NotEmpty List<VentaDetalleRequest> detalles,
         List<VentaPagoRequest> pagos,
         Double montoCredito

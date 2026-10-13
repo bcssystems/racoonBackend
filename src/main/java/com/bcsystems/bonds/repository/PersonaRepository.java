@@ -18,6 +18,8 @@ public interface PersonaRepository extends JpaRepository<Persona, Integer> {
 
     Page<Persona> findByActiva(Boolean activa, Pageable pageable);
 
+    java.util.List<Persona> findByActivaTrueOrderByNombreAsc();
+
     @Query("select p from Persona p where p.rol is null")
     java.util.List<Persona> findPendientesMigracionRol();
 }

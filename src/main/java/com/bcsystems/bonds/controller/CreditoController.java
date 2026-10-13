@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/v1/creditos")
@@ -54,6 +55,36 @@ public class CreditoController {
     @PreAuthorize("hasAuthority('CREDITOS_VER')")
     public ResponseEntity<List<ParcialidadResponse>> listarParcialidades(@PathVariable Integer id) {
         return ResponseEntity.ok(creditoService.listarParcialidades(id));
+    }
+
+    @GetMapping("/cobradores")
+    @PreAuthorize("hasAnyAuthority('CREDITOS_ASIGNAR','COBRANZA_VER')")
+    public ResponseEntity<List<CobradorResponse>> listarCobradores() {
+        return ResponseEntity.ok(creditoService.listarCobradores());
+    }
+
+    @PatchMapping("/{id}/cobrador")
+    @PreAuthorize("hasAuthority('CREDITOS_ASIGNAR')")
+    public ResponseEntity<Void> asignarCobrador(@PathVariable Integer id,
+                                                 @RequestBody AsignarCobradorRequest request) {
+        creditoService.asignarCobrador(id, request.idPersona());
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/cobranza/agenda")
+    @PreAuthorize("hasAuthority('COBRANZA_VER')")
+    public ResponseEntity<List<CobranzaResponse>> agendaCobranza(
+            @RequestParam(required = false) LocalDate desde,
+            @RequestParam(required = false) LocalDate hasta,
+            @RequestParam(required = false) Integer idCobrador,
+            @RequestParam(required = false) String estado) {
+        return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, estado));
+    }
+
+    @PostMapping("/cobranza/abonos")
+    @PreAuthorize("hasAuthority('COBRANZA_ABONAR')")
+    public ResponseEntity<AbonoResponse> registrarAbonoCobranza(@Valid @RequestBody AbonoRequest request) {
+        return ResponseEntity.ok(creditoService.registrarAbonoCobranza(request));
     }
 
     @PostMapping("/abonos")

@@ -25,5 +25,7 @@ public record CreditoResponse(
         LocalDateTime fechaVencimiento,
         EstadoCredito estado,
         LocalDateTime fechaCreacion,
-        String nota
+        String nota,
+        Integer idCobrador,
+        String cobradorNombre
 ) {}

@@ -236,6 +236,12 @@ public class VentaServiceImpl implements VentaService {
             LocalDate fechaPrimerPago = request.fechaPrimerPago() != null
                     ? request.fechaPrimerPago() : fechaInicialParcialidad(periodicidad);
             LocalDateTime fechaVencimiento = fechaParcialidad(fechaPrimerPago, periodicidad, numeroParcialidades - 1);
+            Persona cobrador = request.idCobrador() != null
+                    ? personaRepository.findById(request.idCobrador()).orElseThrow(() -> new NotFoundException("Cobrador no encontrado"))
+                    : null;
+            if (cobrador != null && !Boolean.TRUE.equals(cobrador.getActiva())) {
+                throw new InvalidEntryException("El cobrador seleccionado está inactivo");
+            }
 
             Credito credito = Credito.builder()
                     .venta(venta)
@@ -256,6 +262,7 @@ public class VentaServiceImpl implements VentaService {
                     .estado(EstadoCredito.ACTIVO)
                     .fechaCreacion(LocalDateTime.now())
                     .usuario(usuario)
+                    .cobrador(cobrador)
                     .build();
             credito = creditoRepository.save(credito);
             crearParcialidades(credito, montoCredito, interesTotal, numeroParcialidades, periodicidad, fechaPrimerPago);
