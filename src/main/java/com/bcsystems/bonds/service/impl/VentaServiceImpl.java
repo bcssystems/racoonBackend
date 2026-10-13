@@ -856,7 +856,7 @@ public class VentaServiceImpl implements VentaService {
     }
 
     private String generarFolioPagaré() {
-        String prefix = "PAGARE-";
+        String prefix = "CR-";
         int num = 1;
         while (creditoRepository.existsByFolio(prefix + String.format("%05d", num))
                 || ventaRepository.existsByFolioPagare(prefix + String.format("%05d", num))) {
