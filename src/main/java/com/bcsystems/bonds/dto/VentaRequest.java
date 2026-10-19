@@ -22,5 +22,6 @@ public record VentaRequest(
         Integer idCobrador,
         @NotEmpty List<VentaDetalleRequest> detalles,
         List<VentaPagoRequest> pagos,
-        Double montoCredito
+        Double montoCredito,
+        Double montoSaldoFavor
 ) {}

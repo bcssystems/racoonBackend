@@ -250,7 +250,7 @@ public class CreditoServiceImpl implements CreditoService {
                 c.getMunicipio(), c.getEstado(),
                 c.getRfc(), c.getRepresentanteLegal(), c.getDireccionEntrega(),
                 c.getActivo(), c.getFechaRegistro(),
-                c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(),
+                 c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(), c.getSaldoFavor(),
                 c.getEnListaNegra(), c.getFechaListaNegra(), c.getMotivoListaNegra(),
                 tieneIne);
 

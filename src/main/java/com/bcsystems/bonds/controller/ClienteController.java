@@ -20,9 +20,12 @@ import java.util.List;
 public class ClienteController {
 
     private final ClienteService clienteService;
+    private final com.bcsystems.bonds.service.SaldoFavorService saldoFavorService;
 
-    public ClienteController(ClienteService clienteService) {
+    public ClienteController(ClienteService clienteService,
+                             com.bcsystems.bonds.service.SaldoFavorService saldoFavorService) {
         this.clienteService = clienteService;
+        this.saldoFavorService = saldoFavorService;
     }
 
     @GetMapping("/stats")
@@ -51,6 +54,19 @@ public class ClienteController {
     @PreAuthorize("hasAuthority('CLIENTES_VER')")
     public ResponseEntity<ClienteResponse> obtenerPorId(@PathVariable Integer id) {
         return ResponseEntity.ok(clienteService.obtenerPorId(id));
+    }
+
+    @GetMapping("/{id}/saldo-favor")
+    @PreAuthorize("hasAuthority('CLIENTES_VER')")
+    public ResponseEntity<List<SaldoFavorMovimientoResponse>> listarSaldoFavor(@PathVariable Integer id) {
+        return ResponseEntity.ok(saldoFavorService.listarMovimientos(id));
+    }
+
+    @PostMapping("/{id}/saldo-favor")
+    @PreAuthorize("hasAnyAuthority('CLIENTES_EDITAR','VENTAS_CREAR')")
+    public ResponseEntity<SaldoFavorMovimientoResponse> ingresarSaldoFavor(
+            @PathVariable Integer id, @Valid @RequestBody SaldoFavorIngresoRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(saldoFavorService.ingresar(id, request));
     }
 
     @PostMapping

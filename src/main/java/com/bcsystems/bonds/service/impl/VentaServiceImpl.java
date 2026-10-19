@@ -43,6 +43,7 @@ public class VentaServiceImpl implements VentaService {
     private final CarritoItemRapidoRepository carritoItemRapidoRepository;
     private final MovimientoStockRepository movimientoStockRepository;
     private final ClienteIneRepository clienteIneRepository;
+    private final SaldoFavorMovimientoRepository saldoFavorMovimientoRepository;
 
     @Override
     @Transactional
@@ -59,6 +60,21 @@ public class VentaServiceImpl implements VentaService {
         Persona usuario = obtenerPersonaActual();
         Cliente cliente = request.idCliente() != null
                 ? clienteRepository.findById(request.idCliente()).orElse(null) : null;
+
+        double saldoFavorAplicado = request.montoSaldoFavor() == null ? 0 : request.montoSaldoFavor();
+        if (saldoFavorAplicado < 0) {
+            throw new InvalidEntryException("El saldo a favor aplicado no puede ser negativo");
+        }
+        if (saldoFavorAplicado > 0) {
+            if (cliente == null) throw new InvalidEntryException("Se requiere un cliente para usar saldo a favor");
+            double saldoDisponible = cliente.getSaldoFavor() == null ? 0 : cliente.getSaldoFavor();
+            if (saldoFavorAplicado > saldoDisponible + 0.001) {
+                throw new InvalidEntryException("El saldo a favor excede el disponible del cliente");
+            }
+            if (saldoFavorAplicado > request.total() + 0.001) {
+                throw new InvalidEntryException("El saldo a favor no puede exceder el total de la venta");
+            }
+        }
 
         if (cliente != null && Boolean.TRUE.equals(cliente.getEnListaNegra())) {
             throw new InvalidEntryException("El cliente está en lista negra y no puede realizar compras a crédito");
@@ -155,14 +171,16 @@ public class VentaServiceImpl implements VentaService {
             }
         }
 
+        double sumaPagos = request.pagos() == null ? 0
+                : request.pagos().stream().mapToDouble(VentaPagoRequest::monto).sum();
+        double creditoSolicitado = request.montoCredito() != null ? request.montoCredito() : 0;
+        double totalCubierto = sumaPagos + saldoFavorAplicado
+                + (TipoVenta.CREDITO.name().equals(request.tipoVenta()) ? creditoSolicitado : 0);
+        if (totalCubierto + 0.001 < request.total()) {
+            throw new InvalidEntryException("Los pagos, saldo a favor y monto financiado deben cubrir exactamente el total");
+        }
+
         if (request.pagos() != null && !request.pagos().isEmpty()) {
-            double sumaPagos = request.pagos().stream().mapToDouble(VentaPagoRequest::monto).sum();
-            double creditoSolicitado = request.montoCredito() != null ? request.montoCredito() : 0;
-            double totalCubierto = sumaPagos + (TipoVenta.CREDITO.name().equals(request.tipoVenta()) ? creditoSolicitado : 0);
-            if (totalCubierto + 0.001 < request.total()) {
-                throw new InvalidEntryException("La suma de los pagos ($" + String.format("%.2f", sumaPagos)
-                        + ") es menor al total de la venta ($" + String.format("%.2f", request.total()) + ")");
-            }
             if (sumaPagos > request.total() + 0.001 && request.pagos().stream().anyMatch(p -> !esEfectivo(p.idTipoPago()))) {
                 throw new InvalidEntryException("Solo se permite cambio cuando el excedente es efectivo");
             }
@@ -209,7 +227,7 @@ public class VentaServiceImpl implements VentaService {
             if (request.montoCredito() == null) {
                 montoCredito = Math.max(0, request.total() - pagosNoCredito);
             }
-            if (Math.abs((pagosNoCredito + montoCredito) - request.total()) > 0.01) {
+            if (Math.abs((pagosNoCredito + montoCredito + saldoFavorAplicado) - request.total()) > 0.01) {
                 throw new InvalidEntryException("Los pagos y el monto financiado deben cubrir exactamente el total");
             }
             if (montoCredito < -0.001) {
@@ -235,6 +253,11 @@ public class VentaServiceImpl implements VentaService {
             int plazoMeses = (int) Math.ceil(mesesEquivalentes);
             LocalDate fechaPrimerPago = request.fechaPrimerPago() != null
                     ? request.fechaPrimerPago() : fechaInicialParcialidad(periodicidad);
+            LocalDate fechaVenta = LocalDate.now();
+            if (request.fechaPrimerPago() != null
+                    && (fechaPrimerPago.isBefore(fechaVenta) || fechaPrimerPago.isAfter(fechaVenta.plusDays(10)))) {
+                throw new InvalidEntryException("La primera fecha de pago debe estar entre la fecha de venta y 10 días después");
+            }
             LocalDateTime fechaVencimiento = fechaParcialidad(fechaPrimerPago, periodicidad, numeroParcialidades - 1);
             Persona cobrador = request.idCobrador() != null
                     ? personaRepository.findById(request.idCobrador()).orElseThrow(() -> new NotFoundException("Cobrador no encontrado"))
@@ -283,12 +306,25 @@ public class VentaServiceImpl implements VentaService {
 
             cliente.setSaldoActual((cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0) + montoOriginal);
             clienteRepository.save(cliente);
-            caja.setSaldoActual(caja.getSaldoActual() + (request.total() - montoCredito));
+             caja.setSaldoActual(caja.getSaldoActual() + pagosNoCredito);
             cajaRepository.save(caja);
         } else {
-            caja.setSaldoActual(caja.getSaldoActual() + request.total());
-            cajaRepository.save(caja);
-        }
+             caja.setSaldoActual(caja.getSaldoActual() + request.total() - saldoFavorAplicado);
+             cajaRepository.save(caja);
+         }
+
+         if (saldoFavorAplicado > 0) {
+             double saldoAnterior = cliente.getSaldoFavor() == null ? 0 : cliente.getSaldoFavor();
+             double saldoNuevo = saldoAnterior - saldoFavorAplicado;
+             cliente.setSaldoFavor(saldoNuevo);
+             clienteRepository.save(cliente);
+             saldoFavorMovimientoRepository.save(SaldoFavorMovimiento.builder()
+                     .cliente(cliente).tipo("APLICACION").monto(-saldoFavorAplicado)
+                     .saldoAnterior(saldoAnterior).saldoNuevo(saldoNuevo).venta(venta)
+                     .ventaDetalle(detalles.isEmpty() ? null : detalles.get(0))
+                     .usuario(usuario).concepto("Aplicado a venta #" + venta.getIdVenta())
+                     .fecha(LocalDateTime.now()).build());
+         }
 
         reservaProductoRepository.deleteByCajaIdCaja(request.idCaja());
         carritoItemRapidoRepository.deleteByCajaIdCajaNative(request.idCaja());
@@ -824,12 +860,9 @@ public class VentaServiceImpl implements VentaService {
     }
 
     private LocalDate fechaInicialParcialidad(String periodicidad) {
-        LocalDate hoy = LocalDate.now();
-        return switch (periodicidad) {
-            case "QUINCENAL" -> hoy.plusDays(15);
-            case "SEMANAL" -> hoy.plusDays(7);
-            default -> hoy.plusMonths(1);
-        };
+        // El primer vencimiento siempre debe quedar dentro de los diez días
+        // posteriores a la venta, sin importar la periodicidad elegida.
+        return LocalDate.now().plusDays(7);
     }
 
     private LocalDateTime fechaParcialidad(LocalDate primera, String periodicidad, int indice) {

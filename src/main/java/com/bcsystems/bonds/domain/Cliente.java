@@ -83,6 +83,9 @@ public class Cliente {
 
     private Double saldoActual;
 
+    @Builder.Default
+    private Double saldoFavor = 0.0;
+
     private Boolean enListaNegra;
 
     private LocalDateTime fechaListaNegra;
