@@ -29,6 +29,9 @@ public class Persona {
     @Column(nullable = false, length = 100)
     private String apellido;
 
+    @Column(length = 20)
+    private String telefono;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "id_rol")
     private Rol rol;

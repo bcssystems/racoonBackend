@@ -7,6 +7,7 @@ public record PersonaResponse(
     Integer idPersona,
     String nombre,
     String apellido,
+    String telefono,
     String usuario,
     RolResponse rol,
     Boolean activa,

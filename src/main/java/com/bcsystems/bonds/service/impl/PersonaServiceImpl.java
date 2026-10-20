@@ -83,6 +83,7 @@ public class PersonaServiceImpl implements PersonaService {
         Persona persona = Persona.builder()
                 .nombre(request.nombre())
                 .apellido(request.apellido())
+                .telefono(request.telefono())
                 .usuario(request.usuario())
                 .password(request.password() != null ? passwordEncoder.encode(request.password()) : null)
                 .rol(rol)
@@ -121,6 +122,7 @@ public class PersonaServiceImpl implements PersonaService {
 
         persona.setNombre(request.nombre());
         persona.setApellido(request.apellido());
+        persona.setTelefono(request.telefono());
         persona.setUsuario(request.usuario());
         persona.setRol(rol);
         if (request.password() != null && !request.password().isBlank()) {
@@ -192,7 +194,7 @@ public class PersonaServiceImpl implements PersonaService {
                     .collect(Collectors.toList());
         }
 
-        return new PersonaResponse(p.getIdPersona(), p.getNombre(), p.getApellido(),
+        return new PersonaResponse(p.getIdPersona(), p.getNombre(), p.getApellido(), p.getTelefono(),
                 p.getUsuario(), rolResponse, p.getActiva(), p.getFechaRegistro(), permisosAdicionales);
     }
 }

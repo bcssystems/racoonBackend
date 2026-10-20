@@ -12,7 +12,8 @@ public interface ParcialidadCreditoRepository extends JpaRepository<ParcialidadC
     List<ParcialidadCredito> findByCreditoIdCreditoOrderByNumeroAsc(Integer idCredito);
 
     @Query("select p from ParcialidadCredito p join fetch p.credito c join fetch c.cliente cl " +
-            "where p.fechaVencimiento >= :desde and p.fechaVencimiento < :hasta " +
+            "where p.fechaVencimiento < :hasta " +
+            "and (p.fechaVencimiento >= :desde or (p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
             "and (:idCobrador is null or c.cobrador.idPersona = :idCobrador) " +
             "and (:estado is null or p.estado = :estado) order by p.fechaVencimiento asc, p.numero asc")
     List<ParcialidadCredito> buscarAgenda(@Param("idCobrador") Integer idCobrador,

@@ -8,6 +8,7 @@ import java.util.List;
 public record PersonaRequest(
     @NotBlank String nombre,
     @NotBlank String apellido,
+    String telefono,
     @NotBlank String usuario,
     String password,
     @NotNull Integer idRol,
