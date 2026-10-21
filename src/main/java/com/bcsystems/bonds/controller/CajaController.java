@@ -87,6 +87,13 @@ public class CajaController {
         return ResponseEntity.ok(cajaService.movimientos(id));
     }
 
+    @PostMapping("/movimientos/{id}/cancelar")
+    @PreAuthorize("hasAuthority('CAJAS_MOVIMIENTO')")
+    public ResponseEntity<Void> cancelarMovimiento(@PathVariable Integer id) {
+        cajaService.cancelarMovimiento(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{id}/corte-preview")
     @PreAuthorize("hasAuthority('CAJAS_CORTE')")
     public ResponseEntity<CorteResponse> previewCorte(@PathVariable Integer id) {

@@ -93,7 +93,7 @@ public class CorteController {
                         .findByCajaIdCajaAndFechaBetweenOrderByFechaDesc(
                                 c.getCaja().getIdCaja(),
                                 c.getFechaApertura(), c.getFechaCierre())
-                        .stream().map(a -> new AbonoCorteDto(
+                        .stream().filter(a -> !Boolean.TRUE.equals(a.getCancelado())).map(a -> new AbonoCorteDto(
                                 a.getIdAbono(),
                                 a.getCredito() != null ? a.getCredito().getIdCredito() : null,
                                 a.getCredito() != null ? a.getCredito().getFolio() : null,

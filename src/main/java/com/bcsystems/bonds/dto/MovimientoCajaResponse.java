@@ -21,5 +21,6 @@ public record MovimientoCajaResponse(
         Double saldoNuevo,
         Double saldoInteres,
         Double saldoCapital,
-        String estadoCredito
+        String estadoCredito,
+        Boolean cancelado
 ) {}

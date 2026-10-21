@@ -607,7 +607,9 @@ public class CreditoServiceImpl implements CreditoService {
                 .abono(abono)
                 .tipo(TipoMovimientoCaja.INGRESO)
                 .monto(abono.getMonto())
-                .motivo("Abono a credito #" + abono.getCredito().getIdCredito())
+                .motivo((abono.getCredito().getCliente().getNombre() + " "
+                        + (abono.getCredito().getCliente().getApellidoPaterno() == null ? "" : abono.getCredito().getCliente().getApellidoPaterno())).trim()
+                        + " - Crédito #" + abono.getCredito().getIdCredito())
                 .usuario(usuario)
                 .fecha(LocalDateTime.now())
                 .build());

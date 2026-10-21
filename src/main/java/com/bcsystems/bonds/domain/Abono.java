@@ -49,4 +49,14 @@ public class Abono {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_caja")
     private Caja caja;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean cancelado = false;
+
+    private LocalDateTime fechaCancelacion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_usuario_cancelacion")
+    private Persona usuarioCancelacion;
 }

@@ -33,6 +33,10 @@ public class CajaServiceImpl implements CajaService {
     private final GastoRepository gastoRepository;
     private final AbonoRepository abonoRepository;
     private final AbonoPagoRepository abonoPagoRepository;
+    private final ParcialidadCreditoRepository parcialidadCreditoRepository;
+    private final ClienteRepository clienteRepository;
+    private final CreditoRepository creditoRepository;
+    private final com.bcsystems.bonds.service.ScoreCreditoService scoreCreditoService;
 
     @Override
     public List<CajaResponse> listar() {
@@ -219,9 +223,80 @@ public class CajaServiceImpl implements CajaService {
                             credito == null ? null : credito.getSaldoPendiente(),
                             credito == null ? null : credito.getSaldoInteres(),
                             credito == null ? null : credito.getSaldoCapital(),
-                            credito == null || credito.getEstado() == null ? null : credito.getEstado().name());
-                })
+                             credito == null || credito.getEstado() == null ? null : credito.getEstado().name(),
+                             Boolean.TRUE.equals(m.getCancelado()));
+                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public void cancelarMovimiento(Integer idMovimiento) {
+        MovimientoCaja movimiento = movimientoCajaRepository.findById(idMovimiento)
+                .orElseThrow(() -> new NotFoundException("Movimiento de caja no encontrado"));
+        if (Boolean.TRUE.equals(movimiento.getCancelado())) {
+            throw new InvalidEntryException("El movimiento ya está cancelado");
+        }
+
+        Persona usuario = obtenerPersonaActual();
+        Caja caja = movimiento.getCaja();
+        Abono abono = movimiento.getAbono();
+        if (abono != null) {
+            if (Boolean.TRUE.equals(abono.getCancelado())) {
+                throw new InvalidEntryException("El abono ya está cancelado");
+            }
+            Credito credito = abono.getCredito();
+            credito.setSaldoInteres((credito.getSaldoInteres() == null ? 0 : credito.getSaldoInteres())
+                    + (abono.getInteresPagado() == null ? 0 : abono.getInteresPagado()));
+            credito.setSaldoCapital((credito.getSaldoCapital() == null ? 0 : credito.getSaldoCapital())
+                    + (abono.getCapitalPagado() == null ? 0 : abono.getCapitalPagado()));
+            credito.setSaldoPendiente(credito.getSaldoPendiente() + abono.getMonto());
+            credito.setEstado(EstadoCredito.ACTIVO);
+            creditoRepository.save(credito);
+
+            Cliente cliente = credito.getCliente();
+            cliente.setSaldoActual((cliente.getSaldoActual() == null ? 0 : cliente.getSaldoActual()) + abono.getMonto());
+            clienteRepository.save(cliente);
+            revertirPagoParcialidades(credito, abono.getInteresPagado(), abono.getCapitalPagado());
+
+            abono.setCancelado(true);
+            abono.setFechaCancelacion(LocalDateTime.now());
+            abono.setUsuarioCancelacion(usuario);
+            abonoRepository.save(abono);
+            scoreCreditoService.recalcular(cliente);
+        }
+
+        double ajuste = movimiento.getTipo() == TipoMovimientoCaja.INGRESO
+                ? -movimiento.getMonto() : movimiento.getMonto();
+        caja.setSaldoActual(caja.getSaldoActual() + ajuste);
+        cajaRepository.save(caja);
+        movimiento.setCancelado(true);
+        movimiento.setFechaCancelacion(LocalDateTime.now());
+        movimiento.setUsuarioCancelacion(usuario);
+        movimientoCajaRepository.save(movimiento);
+        auditoriaService.registrar("MovimientoCaja", idMovimiento, "ACTUALIZACION", usuario.getUsuario(),
+                "Cancelación de movimiento de caja" + (abono == null ? "" : " y abono #" + abono.getIdAbono()));
+    }
+
+    private void revertirPagoParcialidades(Credito credito, Double interes, Double capital) {
+        double interesRestante = interes == null ? 0 : interes;
+        double capitalRestante = capital == null ? 0 : capital;
+        List<ParcialidadCredito> parcialidades = parcialidadCreditoRepository
+                .findByCreditoIdCreditoOrderByNumeroAsc(credito.getIdCredito());
+        for (int i = parcialidades.size() - 1; i >= 0 && (interesRestante > 0.001 || capitalRestante > 0.001); i--) {
+            ParcialidadCredito p = parcialidades.get(i);
+            double quitarInteres = Math.min(interesRestante, p.getInteresPagado() == null ? 0 : p.getInteresPagado());
+            double quitarCapital = Math.min(capitalRestante, p.getCapitalPagado() == null ? 0 : p.getCapitalPagado());
+            p.setInteresPagado((p.getInteresPagado() == null ? 0 : p.getInteresPagado()) - quitarInteres);
+            p.setCapitalPagado((p.getCapitalPagado() == null ? 0 : p.getCapitalPagado()) - quitarCapital);
+            interesRestante -= quitarInteres;
+            capitalRestante -= quitarCapital;
+            if (p.getCapitalPagado() <= 0.001 && p.getInteresPagado() <= 0.001) p.setEstado("PENDIENTE");
+            else if (p.getCapitalPagado() + 0.001 >= p.getCapitalProgramado()
+                    && p.getInteresPagado() + 0.001 >= p.getInteresProgramado()) p.setEstado("PAGADA");
+            else p.setEstado("PARCIAL");
+            parcialidadCreditoRepository.save(p);
+        }
     }
 
     @Override
@@ -245,10 +320,10 @@ public class CajaServiceImpl implements CajaService {
                 .filter(v -> v.getEstado() == EstadoVenta.COMPLETADA && v.getTipoVenta() == TipoVenta.CREDITO)
                 .mapToDouble(Venta::getTotal).sum();
         double totalIngresos = movs.stream()
-                .filter(m -> m.getTipo() == TipoMovimientoCaja.INGRESO)
+                .filter(m -> !Boolean.TRUE.equals(m.getCancelado()) && m.getTipo() == TipoMovimientoCaja.INGRESO)
                 .mapToDouble(MovimientoCaja::getMonto).sum();
         double totalEgresos = movs.stream()
-                .filter(m -> m.getTipo() == TipoMovimientoCaja.EGRESO)
+                .filter(m -> !Boolean.TRUE.equals(m.getCancelado()) && m.getTipo() == TipoMovimientoCaja.EGRESO)
                 .mapToDouble(MovimientoCaja::getMonto).sum();
 
         List<Gasto> gastosPeriodo = gastoRepository
@@ -262,6 +337,7 @@ public class CajaServiceImpl implements CajaService {
         List<VentaPago> pagosEnRango = ventaPagoRepository.findByCajaAndFechaRange(id, apertura, ahora);
         List<Abono> abonosEnRango = abonoRepository
                 .findByCajaIdCajaAndFechaBetweenOrderByFechaDesc(id, apertura, ahora);
+        abonosEnRango = abonosEnRango.stream().filter(a -> !Boolean.TRUE.equals(a.getCancelado())).toList();
         double totalAbonos = abonosEnRango.stream().mapToDouble(Abono::getMonto).sum();
 
         java.util.Map<Integer, TipoPago> tipoPorId = pagosEnRango.stream()

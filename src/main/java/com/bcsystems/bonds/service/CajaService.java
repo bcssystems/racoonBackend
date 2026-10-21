@@ -16,6 +16,8 @@ public interface CajaService {
     CajaResponse ingresarEfectivo(Integer id, MovimientoCajaRequest request);
     CajaResponse retirarEfectivo(Integer id, MovimientoCajaRequest request);
     List<MovimientoCajaResponse> movimientos(Integer id);
+
+    void cancelarMovimiento(Integer idMovimiento);
     CorteResponse previewCorte(Integer id);
     CorteResponse realizarCorte(Integer id);
     CorteResponse actualizarDetallePagos(Integer idCorte, List<CorteDetallePagoUpdateRequest.ItemDetallePago> pagos);

@@ -45,4 +45,14 @@ public class MovimientoCaja {
 
     @Column(updatable = false)
     private LocalDateTime fecha;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean cancelado = false;
+
+    private LocalDateTime fechaCancelacion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_usuario_cancelacion")
+    private Persona usuarioCancelacion;
 }
