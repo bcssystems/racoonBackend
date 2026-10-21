@@ -48,6 +48,10 @@ public class VentaServiceImpl implements VentaService {
     @Override
     @Transactional
     public VentaResponse crear(VentaRequest request) {
+        if (TipoVenta.CREDITO.name().equalsIgnoreCase(request.tipoVenta())
+                && (request.nota() == null || request.nota().isBlank())) {
+            throw new InvalidEntryException("La nota es obligatoria para las ventas a crédito");
+        }
         Caja caja = cajaRepository.findById(request.idCaja())
                 .orElseThrow(() -> new NotFoundException("Caja no encontrada"));
         if (caja.getEstado() != CajaEstado.ABIERTA) {
