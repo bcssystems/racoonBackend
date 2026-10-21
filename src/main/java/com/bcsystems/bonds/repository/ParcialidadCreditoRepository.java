@@ -22,5 +22,11 @@ public interface ParcialidadCreditoRepository extends JpaRepository<ParcialidadC
                                           @Param("desde") LocalDateTime desde,
                                           @Param("hasta") LocalDateTime hasta,
                                            @Param("estado") String estado,
-                                           @Param("cliente") String cliente);
+                                            @Param("cliente") String cliente);
+
+    @Query("select p from ParcialidadCredito p join fetch p.credito c join fetch c.cliente cl " +
+            "where c.cobrador.idPersona = :idCobrador and p.estado <> 'PAGADA' " +
+            "and p.fechaVencimiento < :limite order by p.fechaVencimiento asc, p.numero asc")
+    List<ParcialidadCredito> findPendientesParaItinerario(@Param("idCobrador") Integer idCobrador,
+                                                            @Param("limite") LocalDateTime limite);
 }

@@ -21,6 +21,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import com.bcsystems.bonds.service.WhatsAppService;
+import com.bcsystems.bonds.event.CreditoAsignadoEvent;
+import org.springframework.context.ApplicationEventPublisher;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +47,8 @@ public class VentaServiceImpl implements VentaService {
     private final MovimientoStockRepository movimientoStockRepository;
     private final ClienteIneRepository clienteIneRepository;
     private final SaldoFavorMovimientoRepository saldoFavorMovimientoRepository;
+    private final WhatsAppService whatsAppService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -294,6 +299,9 @@ public class VentaServiceImpl implements VentaService {
                     .build();
             credito = creditoRepository.save(credito);
             crearParcialidades(credito, montoCredito, interesTotal, numeroParcialidades, periodicidad, fechaPrimerPago);
+            if (cobrador != null) {
+                eventPublisher.publishEvent(new CreditoAsignadoEvent(credito.getIdCredito(), null, cobrador.getIdPersona()));
+            }
 
             MovimientoCredito mov = MovimientoCredito.builder()
                     .credito(credito)
@@ -402,6 +410,11 @@ public class VentaServiceImpl implements VentaService {
         venta.setFechaGeneracionCodigo(LocalDateTime.now());
         venta.setGeneroAutorizacion(admin.getUsuario());
         venta = ventaRepository.save(venta);
+
+        whatsAppService.notificarAutorizacion("Cancelación de venta", "Venta #" + id,
+                "Cliente: " + (venta.getCliente() == null ? "Mostrador" : venta.getCliente().getNombre()) +
+                        "; Motivo: " + (venta.getMotivoCancelacion() == null ? "Sin motivo" : venta.getMotivoCancelacion()),
+                codigo, admin.getUsuario());
 
         auditoriaService.registrar("Venta", id, "ACTUALIZACION", admin.getUsuario(),
                 "Codigo de autorizacion generado para la cancelacion de la Venta #" + id);

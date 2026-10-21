@@ -8,6 +8,9 @@ import com.bcsystems.bonds.exception.NotFoundException;
 import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.CreditoService;
 import com.bcsystems.bonds.service.ScoreCreditoService;
+import com.bcsystems.bonds.service.WhatsAppService;
+import com.bcsystems.bonds.event.CreditoAsignadoEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.time.LocalDate;
 
 @Service
@@ -35,6 +39,7 @@ public class CreditoServiceImpl implements CreditoService {
     private final CajaRepository cajaRepository;
     private final MovimientoCajaRepository movimientoCajaRepository;
     private final ScoreCreditoService scoreCreditoService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public List<CreditoResponse> listarCreditosPorCliente(Integer idCliente) {
@@ -324,8 +329,14 @@ public class CreditoServiceImpl implements CreditoService {
         if (cobrador != null && !Boolean.TRUE.equals(cobrador.getActiva())) {
             throw new InvalidEntryException("El usuario seleccionado está inactivo");
         }
+        Integer anteriorId = credito.getCobrador() == null ? null : credito.getCobrador().getIdPersona();
         credito.setCobrador(cobrador);
         creditoRepository.save(credito);
+        if (!Objects.equals(anteriorId, idPersona) && idPersona != null) {
+            eventPublisher.publishEvent(new CreditoAsignadoEvent(idCredito, anteriorId, idPersona));
+        } else if (anteriorId != null && idPersona == null) {
+            eventPublisher.publishEvent(new CreditoAsignadoEvent(idCredito, anteriorId, null));
+        }
     }
 
     @Override

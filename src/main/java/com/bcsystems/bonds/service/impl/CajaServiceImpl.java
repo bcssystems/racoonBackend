@@ -8,6 +8,7 @@ import com.bcsystems.bonds.exception.NotFoundException;
 import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.AuditoriaService;
 import com.bcsystems.bonds.service.CajaService;
+import com.bcsystems.bonds.service.WhatsAppService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,7 @@ public class CajaServiceImpl implements CajaService {
     private final ClienteRepository clienteRepository;
     private final CreditoRepository creditoRepository;
     private final com.bcsystems.bonds.service.ScoreCreditoService scoreCreditoService;
+    private final WhatsAppService whatsAppService;
 
     @Override
     public List<CajaResponse> listar() {
@@ -270,6 +272,13 @@ public class CajaServiceImpl implements CajaService {
         movimiento.setFechaGeneracionCodigo(LocalDateTime.now());
         movimiento.setGeneroAutorizacion(admin.getUsuario());
         movimientoCajaRepository.save(movimiento);
+        String detalle = movimiento.getMotivoCancelacion();
+        if (movimiento.getAbono() != null) {
+            detalle = "Abono #" + movimiento.getAbono().getIdAbono() + ", monto: $" + movimiento.getMonto()
+                    + "; motivo: " + (detalle == null ? "Sin motivo" : detalle);
+        }
+        whatsAppService.notificarAutorizacion("Cancelación de movimiento de caja",
+                "Movimiento #" + idMovimiento, detalle, codigo, admin.getUsuario());
         return new CodigoAutorizacionResponse(idMovimiento, codigo, movimiento.getFechaGeneracionCodigo(),
                 movimiento.getFechaGeneracionCodigo().plusMinutes(10));
     }

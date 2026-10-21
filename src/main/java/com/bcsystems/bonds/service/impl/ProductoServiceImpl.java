@@ -10,6 +10,7 @@ import com.bcsystems.bonds.exception.NotFoundException;
 import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.AuditoriaService;
 import com.bcsystems.bonds.service.ProductoService;
+import com.bcsystems.bonds.service.WhatsAppService;
 import com.bcsystems.bonds.util.CodigoGeneratorService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +34,7 @@ public class ProductoServiceImpl implements ProductoService {
     private final CategoriaRepository categoriaRepository;
     private final CodigoGeneratorService codigoGenerator;
     private final AuditoriaService auditoriaService;
+    private final WhatsAppService whatsAppService;
 
     public ProductoServiceImpl(ProductoRepository productoRepository,
                                SucursalRepository sucursalRepository,
@@ -40,7 +42,8 @@ public class ProductoServiceImpl implements ProductoService {
                                MovimientoStockRepository movimientoStockRepository,
                                CategoriaRepository categoriaRepository,
                                CodigoGeneratorService codigoGenerator,
-                               AuditoriaService auditoriaService) {
+                               AuditoriaService auditoriaService,
+                               WhatsAppService whatsAppService) {
         this.productoRepository = productoRepository;
         this.sucursalRepository = sucursalRepository;
         this.inventarioSucursalRepository = inventarioSucursalRepository;
@@ -48,6 +51,7 @@ public class ProductoServiceImpl implements ProductoService {
         this.categoriaRepository = categoriaRepository;
         this.codigoGenerator = codigoGenerator;
         this.auditoriaService = auditoriaService;
+        this.whatsAppService = whatsAppService;
     }
 
     @Override
@@ -478,7 +482,16 @@ public class ProductoServiceImpl implements ProductoService {
         movimiento.setFechaGeneracionCodigo(ahora);
         movimiento.setGeneroAutorizacion(obtenerUsuarioActual());
         movimientoStockRepository.save(movimiento);
+        whatsAppService.notificarAutorizacion("Movimiento de inventario", "Movimiento #" + idMovimiento,
+                valorMovimiento(movimiento), codigo, obtenerUsuarioActual());
         return new CodigoMovimientoResponse(idMovimiento, codigo, ahora, ahora.plusMinutes(10));
+    }
+
+    private String valorMovimiento(MovimientoStock movimiento) {
+        return (movimiento.getTipoMovimiento() == null ? "Movimiento" : movimiento.getTipoMovimiento().name()) +
+                ", producto: " + (movimiento.getProducto() == null ? "N/D" : movimiento.getProducto().getNombre()) +
+                ", cantidad: " + movimiento.getCantidad() +
+                ", motivo: " + (movimiento.getObservacion() == null ? "Sin observación" : movimiento.getObservacion());
     }
 
     @Transactional

@@ -21,4 +21,7 @@ public interface CreditoRepository extends JpaRepository<Credito, Integer> {
 
     @Query("SELECT c FROM Credito c WHERE c.cliente.idCliente = :idCliente ORDER BY c.fechaCreacion DESC")
     List<Credito> findActivosByCliente(@Param("idCliente") Integer idCliente);
+
+    @Query("select distinct c.cobrador from Credito c where c.cobrador is not null and c.cobrador.activa = true order by c.cobrador.nombre")
+    List<com.bcsystems.bonds.domain.Persona> findCobradoresActivos();
 }
