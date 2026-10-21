@@ -17,6 +17,7 @@ public interface CajaService {
     CajaResponse ingresarEfectivo(Integer id, MovimientoCajaRequest request);
     CajaResponse retirarEfectivo(Integer id, MovimientoCajaRequest request);
     List<MovimientoCajaResponse> movimientos(Integer id);
+    List<MovimientoCajaResponse> solicitudesCancelacion();
 
     void solicitarCancelacionMovimiento(Integer idMovimiento, String motivo);
 

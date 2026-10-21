@@ -10,4 +10,6 @@ public interface MovimientoCajaRepository extends JpaRepository<MovimientoCaja, 
     List<MovimientoCaja> findByCajaIdCajaOrderByFechaDesc(Integer idCaja);
     List<MovimientoCaja> findByCajaIdCajaAndFechaBetweenOrderByFechaDesc(
             Integer idCaja, LocalDateTime inicio, LocalDateTime fin);
+
+    List<MovimientoCaja> findByFechaSolicitudCancelacionIsNotNullAndCanceladoFalseOrderByFechaSolicitudCancelacionDesc();
 }

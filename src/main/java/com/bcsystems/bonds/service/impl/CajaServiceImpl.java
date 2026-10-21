@@ -202,7 +202,18 @@ public class CajaServiceImpl implements CajaService {
     @Transactional(readOnly = true)
     public List<MovimientoCajaResponse> movimientos(Integer id) {
         return movimientoCajaRepository.findByCajaIdCajaOrderByFechaDesc(id).stream()
-                .map(m -> {
+                .map(this::toMovimientoResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MovimientoCajaResponse> solicitudesCancelacion() {
+        return movimientoCajaRepository.findByFechaSolicitudCancelacionIsNotNullAndCanceladoFalseOrderByFechaSolicitudCancelacionDesc()
+                .stream().map(this::toMovimientoResponse).toList();
+    }
+
+    private MovimientoCajaResponse toMovimientoResponse(MovimientoCaja m) {
                     Abono abono = m.getAbono();
                     Credito credito = abono == null ? null : abono.getCredito();
                     Cliente cliente = credito == null ? null : credito.getCliente();
@@ -227,8 +238,6 @@ public class CajaServiceImpl implements CajaService {
                             Boolean.TRUE.equals(m.getCancelado()),
                             m.getFechaSolicitudCancelacion() == null ? null : "SOLICITADA",
                             m.getMotivoCancelacion());
-                 })
-                .toList();
     }
 
     @Override
