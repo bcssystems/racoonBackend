@@ -46,4 +46,6 @@ public class ParcialidadCredito {
     @Builder.Default
     @Column(nullable = false, length = 15)
     private String estado = "PENDIENTE";
+
+    private LocalDateTime fechaUltimoPago;
 }

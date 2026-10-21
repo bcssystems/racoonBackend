@@ -22,6 +22,8 @@ public record CreditoResponse(
         Double interesTotal,
         Double saldoCapital,
         Double saldoInteres,
+        Integer scoreAlCrear,
+        Integer scoreCliente,
         LocalDateTime fechaVencimiento,
         EstadoCredito estado,
         LocalDateTime fechaCreacion,

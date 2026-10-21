@@ -29,6 +29,7 @@ public record ClienteResponse(
         Double limiteCredito,
          Double saldoActual,
          Double saldoFavor,
+         Integer scoreCredito,
         Boolean enListaNegra,
         LocalDateTime fechaListaNegra,
         String motivoListaNegra,

@@ -50,6 +50,10 @@ public class Credito {
     private Double saldoCapital;
     private Double saldoInteres;
 
+    @Column(nullable = false, columnDefinition = "integer default 100")
+    @Builder.Default
+    private Integer scoreAlCrear = 100;
+
     @Column(length = 12)
     private String periodicidad = "MENSUAL";
 

@@ -7,6 +7,7 @@ import com.bcsystems.bonds.exception.InvalidEntryException;
 import com.bcsystems.bonds.exception.NotFoundException;
 import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.CreditoService;
+import com.bcsystems.bonds.service.ScoreCreditoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class CreditoServiceImpl implements CreditoService {
     private final ClienteIneRepository clienteIneRepository;
     private final CajaRepository cajaRepository;
     private final MovimientoCajaRepository movimientoCajaRepository;
+    private final ScoreCreditoService scoreCreditoService;
 
     @Override
     public List<CreditoResponse> listarCreditosPorCliente(Integer idCliente) {
@@ -129,6 +131,7 @@ public class CreditoServiceImpl implements CreditoService {
         clienteRepository.save(cliente);
 
         aplicarPagoParcialidades(credito, interesPagado, capitalPagado);
+        scoreCreditoService.recalcular(cliente);
         return toAbonoResponse(abono, usuario, saldoAnterior, saldoNuevo);
     }
 
@@ -250,7 +253,7 @@ public class CreditoServiceImpl implements CreditoService {
                 c.getMunicipio(), c.getEstado(),
                 c.getRfc(), c.getRepresentanteLegal(), c.getDireccionEntrega(),
                 c.getActivo(), c.getFechaRegistro(),
-                 c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(), c.getSaldoFavor(),
+                 c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(), c.getSaldoFavor(), c.getScoreCredito(),
                 c.getEnListaNegra(), c.getFechaListaNegra(), c.getMotivoListaNegra(),
                 tieneIne);
 
@@ -397,8 +400,9 @@ public class CreditoServiceImpl implements CreditoService {
                 c.getMontoOriginal(), c.getSaldoPendiente(),
                 c.getPlazoMeses(), c.getPorcentajeInteres(),
                 c.getPeriodicidad(), c.getNumeroParcialidades(), c.getFechaPrimerPago(),
-                capital, interes, saldoCapital, saldoInteres,
-                c.getFechaVencimiento(), c.getEstado(), c.getFechaCreacion(),
+                 capital, interes, saldoCapital, saldoInteres,
+                 c.getScoreAlCrear(), c.getCliente().getScoreCredito(),
+                 c.getFechaVencimiento(), c.getEstado(), c.getFechaCreacion(),
                 c.getVenta().getNota(),
                 c.getCobrador() == null ? null : c.getCobrador().getIdPersona(),
                 c.getCobrador() == null ? null : c.getCobrador().getNombre() + " " + c.getCobrador().getApellido());
@@ -556,10 +560,11 @@ public class CreditoServiceImpl implements CreditoService {
 
             if (parcialidad.getCapitalPagado() + 0.001 >= parcialidad.getCapitalProgramado()
                     && parcialidad.getInteresPagado() + 0.001 >= parcialidad.getInteresProgramado()) {
-                parcialidad.setEstado("PAGADA");
+            parcialidad.setEstado("PAGADA");
             } else if (parcialidad.getCapitalPagado() > 0 || parcialidad.getInteresPagado() > 0) {
                 parcialidad.setEstado("PARCIAL");
             }
+            if (aplicarInteres > 0 || aplicarCapital > 0) parcialidad.setFechaUltimoPago(LocalDateTime.now());
             parcialidadCreditoRepository.save(parcialidad);
             if (interesRestante <= 0.001 && capitalRestante <= 0.001) break;
         }

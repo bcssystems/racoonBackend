@@ -86,6 +86,10 @@ public class Cliente {
     @Builder.Default
     private Double saldoFavor = 0.0;
 
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "integer default 100")
+    private Integer scoreCredito = 100;
+
     private Boolean enListaNegra;
 
     private LocalDateTime fechaListaNegra;
