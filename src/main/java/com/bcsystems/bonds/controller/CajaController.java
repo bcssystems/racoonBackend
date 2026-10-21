@@ -89,9 +89,24 @@ public class CajaController {
 
     @PostMapping("/movimientos/{id}/cancelar")
     @PreAuthorize("hasAuthority('CAJAS_MOVIMIENTO')")
-    public ResponseEntity<Void> cancelarMovimiento(@PathVariable Integer id) {
-        cajaService.cancelarMovimiento(id);
+    public ResponseEntity<Void> cancelarMovimiento(@PathVariable Integer id,
+                                                   @RequestBody(required = false) CancelarVentaRequest request) {
+        cajaService.cancelarMovimiento(id, request);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/movimientos/{id}/solicitar-cancelacion")
+    @PreAuthorize("hasAuthority('CAJAS_MOVIMIENTO')")
+    public ResponseEntity<Void> solicitarCancelacionMovimiento(@PathVariable Integer id,
+                                                               @Valid @RequestBody SolicitudCancelacionRequest request) {
+        cajaService.solicitarCancelacionMovimiento(id, request.motivo());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/movimientos/{id}/generar-codigo")
+    @PreAuthorize("hasAuthority('CANCELACIONES_AUTORIZAR')")
+    public ResponseEntity<CodigoAutorizacionResponse> generarCodigoCancelacionMovimiento(@PathVariable Integer id) {
+        return ResponseEntity.ok(cajaService.generarCodigoCancelacionMovimiento(id));
     }
 
     @GetMapping("/{id}/corte-preview")

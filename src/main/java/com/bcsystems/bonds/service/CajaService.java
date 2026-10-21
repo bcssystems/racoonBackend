@@ -1,6 +1,7 @@
 package com.bcsystems.bonds.service;
 
 import com.bcsystems.bonds.dto.*;
+import com.bcsystems.bonds.dto.CodigoAutorizacionResponse;
 
 import java.util.List;
 
@@ -17,7 +18,11 @@ public interface CajaService {
     CajaResponse retirarEfectivo(Integer id, MovimientoCajaRequest request);
     List<MovimientoCajaResponse> movimientos(Integer id);
 
-    void cancelarMovimiento(Integer idMovimiento);
+    void solicitarCancelacionMovimiento(Integer idMovimiento, String motivo);
+
+    CodigoAutorizacionResponse generarCodigoCancelacionMovimiento(Integer idMovimiento);
+
+    void cancelarMovimiento(Integer idMovimiento, CancelarVentaRequest request);
     CorteResponse previewCorte(Integer id);
     CorteResponse realizarCorte(Integer id);
     CorteResponse actualizarDetallePagos(Integer idCorte, List<CorteDetallePagoUpdateRequest.ItemDetallePago> pagos);

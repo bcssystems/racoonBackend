@@ -55,4 +55,20 @@ public class MovimientoCaja {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_usuario_cancelacion")
     private Persona usuarioCancelacion;
+
+    @Column(length = 300)
+    private String motivoCancelacion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_solicitante_cancelacion")
+    private Persona solicitanteCancelacion;
+
+    private LocalDateTime fechaSolicitudCancelacion;
+
+    @Column(length = 4)
+    private String codigoAutorizacion;
+
+    private LocalDateTime fechaGeneracionCodigo;
+
+    private String generoAutorizacion;
 }

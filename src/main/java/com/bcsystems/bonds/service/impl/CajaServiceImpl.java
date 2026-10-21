@@ -224,14 +224,50 @@ public class CajaServiceImpl implements CajaService {
                             credito == null ? null : credito.getSaldoInteres(),
                             credito == null ? null : credito.getSaldoCapital(),
                              credito == null || credito.getEstado() == null ? null : credito.getEstado().name(),
-                             Boolean.TRUE.equals(m.getCancelado()));
+                            Boolean.TRUE.equals(m.getCancelado()),
+                            m.getFechaSolicitudCancelacion() == null ? null : "SOLICITADA",
+                            m.getMotivoCancelacion());
                  })
                 .toList();
     }
 
     @Override
     @Transactional
-    public void cancelarMovimiento(Integer idMovimiento) {
+    public void solicitarCancelacionMovimiento(Integer idMovimiento, String motivo) {
+        MovimientoCaja movimiento = movimientoCajaRepository.findById(idMovimiento)
+                .orElseThrow(() -> new NotFoundException("Movimiento de caja no encontrado"));
+        if (Boolean.TRUE.equals(movimiento.getCancelado())) throw new InvalidEntryException("El movimiento ya está cancelado");
+        if (motivo == null || motivo.isBlank()) throw new InvalidEntryException("Debe indicar un motivo de cancelación");
+        if (movimiento.getFechaSolicitudCancelacion() != null) throw new InvalidEntryException("El movimiento ya tiene una solicitud pendiente");
+        Persona solicitante = obtenerPersonaActual();
+        movimiento.setMotivoCancelacion(motivo.trim());
+        movimiento.setSolicitanteCancelacion(solicitante);
+        movimiento.setFechaSolicitudCancelacion(LocalDateTime.now());
+        movimientoCajaRepository.save(movimiento);
+        auditoriaService.registrar("MovimientoCaja", idMovimiento, "ACTUALIZACION", solicitante.getUsuario(),
+                "Solicitud de cancelación: " + motivo.trim());
+    }
+
+    @Override
+    @Transactional
+    public CodigoAutorizacionResponse generarCodigoCancelacionMovimiento(Integer idMovimiento) {
+        MovimientoCaja movimiento = movimientoCajaRepository.findById(idMovimiento)
+                .orElseThrow(() -> new NotFoundException("Movimiento de caja no encontrado"));
+        if (Boolean.TRUE.equals(movimiento.getCancelado())) throw new InvalidEntryException("El movimiento ya está cancelado");
+        if (movimiento.getFechaSolicitudCancelacion() == null) throw new InvalidEntryException("El movimiento no tiene solicitud de cancelación");
+        Persona admin = obtenerPersonaActual();
+        String codigo = String.format("%04d", java.util.concurrent.ThreadLocalRandom.current().nextInt(10000));
+        movimiento.setCodigoAutorizacion(codigo);
+        movimiento.setFechaGeneracionCodigo(LocalDateTime.now());
+        movimiento.setGeneroAutorizacion(admin.getUsuario());
+        movimientoCajaRepository.save(movimiento);
+        return new CodigoAutorizacionResponse(idMovimiento, codigo, movimiento.getFechaGeneracionCodigo(),
+                movimiento.getFechaGeneracionCodigo().plusMinutes(10));
+    }
+
+    @Override
+    @Transactional
+    public void cancelarMovimiento(Integer idMovimiento, CancelarVentaRequest request) {
         MovimientoCaja movimiento = movimientoCajaRepository.findById(idMovimiento)
                 .orElseThrow(() -> new NotFoundException("Movimiento de caja no encontrado"));
         if (Boolean.TRUE.equals(movimiento.getCancelado())) {
@@ -239,6 +275,23 @@ public class CajaServiceImpl implements CajaService {
         }
 
         Persona usuario = obtenerPersonaActual();
+        boolean puedeAutorizar = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("CANCELACIONES_AUTORIZAR"));
+        if (!puedeAutorizar) {
+            if (movimiento.getFechaSolicitudCancelacion() == null) {
+                throw new InvalidEntryException("Primero solicita la cancelación con un motivo");
+            }
+            if (request == null || request.codigo() == null || request.codigo().isBlank()) {
+                throw new InvalidEntryException("Ingresa el código de autorización del administrador");
+            }
+            if (movimiento.getCodigoAutorizacion() == null || movimiento.getFechaGeneracionCodigo() == null
+                    || movimiento.getFechaGeneracionCodigo().plusMinutes(10).isBefore(LocalDateTime.now())) {
+                throw new InvalidEntryException("El código no existe o expiró");
+            }
+            if (!request.codigo().trim().equals(movimiento.getCodigoAutorizacion())) {
+                throw new InvalidEntryException("Código de autorización inválido");
+            }
+        }
         Caja caja = movimiento.getCaja();
         Abono abono = movimiento.getAbono();
         if (abono != null) {
@@ -273,6 +326,9 @@ public class CajaServiceImpl implements CajaService {
         movimiento.setCancelado(true);
         movimiento.setFechaCancelacion(LocalDateTime.now());
         movimiento.setUsuarioCancelacion(usuario);
+        movimiento.setCodigoAutorizacion(null);
+        movimiento.setFechaGeneracionCodigo(null);
+        movimiento.setGeneroAutorizacion(null);
         movimientoCajaRepository.save(movimiento);
         auditoriaService.registrar("MovimientoCaja", idMovimiento, "ACTUALIZACION", usuario.getUsuario(),
                 "Cancelación de movimiento de caja" + (abono == null ? "" : " y abono #" + abono.getIdAbono()));

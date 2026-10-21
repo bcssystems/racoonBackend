@@ -258,9 +258,9 @@ public class VentaServiceImpl implements VentaService {
             LocalDate fechaPrimerPago = request.fechaPrimerPago() != null
                     ? request.fechaPrimerPago() : fechaInicialParcialidad(periodicidad);
             LocalDate fechaVenta = LocalDate.now();
-            if (request.fechaPrimerPago() != null
-                    && (fechaPrimerPago.isBefore(fechaVenta) || fechaPrimerPago.isAfter(fechaVenta.plusDays(10)))) {
-                throw new InvalidEntryException("La primera fecha de pago debe estar entre la fecha de venta y 10 días después");
+            long diasPrimerPago = "SEMANAL".equals(periodicidad) ? 7L : 3L;
+            if (request.fechaPrimerPago() != null && !fechaPrimerPago.equals(fechaVenta.plusDays(diasPrimerPago))) {
+                throw new InvalidEntryException("La primera fecha de pago debe ser exactamente " + diasPrimerPago + " días después de la venta");
             }
             LocalDateTime fechaVencimiento = fechaParcialidad(fechaPrimerPago, periodicidad, numeroParcialidades - 1);
             Persona cobrador = request.idCobrador() != null
@@ -865,9 +865,7 @@ public class VentaServiceImpl implements VentaService {
     }
 
     private LocalDate fechaInicialParcialidad(String periodicidad) {
-        // El primer vencimiento siempre debe quedar dentro de los diez días
-        // posteriores a la venta, sin importar la periodicidad elegida.
-        return LocalDate.now().plusDays(7);
+        return LocalDate.now().plusDays("SEMANAL".equals(periodicidad) ? 7 : 3);
     }
 
     private LocalDateTime fechaParcialidad(LocalDate primera, String periodicidad, int indice) {
