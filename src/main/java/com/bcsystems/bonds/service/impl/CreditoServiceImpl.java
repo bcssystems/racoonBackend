@@ -329,13 +329,13 @@ public class CreditoServiceImpl implements CreditoService {
     }
 
     @Override
-    public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, String estado) {
+    public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, String estado, String cliente) {
         Persona actual = obtenerPersonaActual();
         boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS") || tieneAutoridad("CREDITOS_ASIGNAR");
         Integer cobradorFiltro = verTodas ? idCobrador : actual.getIdPersona();
         LocalDate inicio = desde != null ? desde : LocalDate.now();
         LocalDate fin = hasta != null ? hasta : inicio.plusDays(30);
-        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado)
+        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado, cliente)
                 .stream().map(this::toCobranzaResponse).toList();
     }
 

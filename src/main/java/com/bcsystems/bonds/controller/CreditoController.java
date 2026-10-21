@@ -77,8 +77,9 @@ public class CreditoController {
             @RequestParam(required = false) LocalDate desde,
             @RequestParam(required = false) LocalDate hasta,
             @RequestParam(required = false) Integer idCobrador,
-            @RequestParam(required = false) String estado) {
-        return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, estado));
+             @RequestParam(required = false) String estado,
+             @RequestParam(required = false) String cliente) {
+        return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, estado, cliente));
     }
 
     @PostMapping("/cobranza/abonos")

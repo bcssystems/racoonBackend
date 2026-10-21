@@ -15,9 +15,12 @@ public interface ParcialidadCreditoRepository extends JpaRepository<ParcialidadC
             "where p.fechaVencimiento < :hasta " +
             "and (p.fechaVencimiento >= :desde or (p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
             "and (:idCobrador is null or c.cobrador.idPersona = :idCobrador) " +
-            "and (:estado is null or p.estado = :estado) order by p.fechaVencimiento asc, p.numero asc")
+            "and (:estado is null or p.estado = :estado) " +
+            "and (:cliente is null or lower(concat(cl.nombre, ' ', coalesce(cl.apellidoPaterno, ''))) like lower(concat('%', :cliente, '%'))) " +
+            "order by p.fechaVencimiento asc, p.numero asc")
     List<ParcialidadCredito> buscarAgenda(@Param("idCobrador") Integer idCobrador,
                                           @Param("desde") LocalDateTime desde,
                                           @Param("hasta") LocalDateTime hasta,
-                                          @Param("estado") String estado);
+                                           @Param("estado") String estado,
+                                           @Param("cliente") String cliente);
 }
