@@ -10,5 +10,16 @@ public record MovimientoCajaResponse(
         Double monto,
         String motivo,
         String usuario,
-        LocalDateTime fecha
+        LocalDateTime fecha,
+        Integer idAbono,
+        Integer idCredito,
+        String folioCredito,
+        String clienteNombre,
+        Double saldoAnterior,
+        Double interesPagado,
+        Double capitalPagado,
+        Double saldoNuevo,
+        Double saldoInteres,
+        Double saldoCapital,
+        String estadoCredito
 ) {}

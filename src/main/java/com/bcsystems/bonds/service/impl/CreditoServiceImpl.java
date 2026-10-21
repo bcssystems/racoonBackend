@@ -599,6 +599,7 @@ public class CreditoServiceImpl implements CreditoService {
         }
         movimientoCajaRepository.save(MovimientoCaja.builder()
                 .caja(caja)
+                .abono(abono)
                 .tipo(TipoMovimientoCaja.INGRESO)
                 .monto(abono.getMonto())
                 .motivo("Abono a credito #" + abono.getCredito().getIdCredito())

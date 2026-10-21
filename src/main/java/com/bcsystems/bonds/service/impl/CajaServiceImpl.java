@@ -195,12 +195,32 @@ public class CajaServiceImpl implements CajaService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<MovimientoCajaResponse> movimientos(Integer id) {
         return movimientoCajaRepository.findByCajaIdCajaOrderByFechaDesc(id).stream()
-                .map(m -> new MovimientoCajaResponse(
-                        m.getIdMovimientoCaja(), m.getCaja().getIdCaja(),
-                        m.getCaja().getNombre(), m.getTipo().name(),
-                        m.getMonto(), m.getMotivo(), m.getUsuario().getUsuario(), m.getFecha()))
+                .map(m -> {
+                    Abono abono = m.getAbono();
+                    Credito credito = abono == null ? null : abono.getCredito();
+                    Cliente cliente = credito == null ? null : credito.getCliente();
+                    Double saldoAnterior = abono == null ? null :
+                            (credito.getSaldoPendiente() == null ? null : credito.getSaldoPendiente() + abono.getMonto());
+                    return new MovimientoCajaResponse(
+                            m.getIdMovimientoCaja(), m.getCaja().getIdCaja(),
+                            m.getCaja().getNombre(), m.getTipo().name(),
+                            m.getMonto(), m.getMotivo(), m.getUsuario().getUsuario(), m.getFecha(),
+                            abono == null ? null : abono.getIdAbono(),
+                            credito == null ? null : credito.getIdCredito(),
+                            credito == null ? null : credito.getFolio(),
+                            cliente == null ? null : cliente.getNombre() + " " +
+                                    (cliente.getApellidoPaterno() == null ? "" : cliente.getApellidoPaterno()),
+                            saldoAnterior,
+                            abono == null ? null : abono.getInteresPagado(),
+                            abono == null ? null : abono.getCapitalPagado(),
+                            credito == null ? null : credito.getSaldoPendiente(),
+                            credito == null ? null : credito.getSaldoInteres(),
+                            credito == null ? null : credito.getSaldoCapital(),
+                            credito == null || credito.getEstado() == null ? null : credito.getEstado().name());
+                })
                 .toList();
     }
 
