@@ -47,6 +47,7 @@ public class VentaServiceImpl implements VentaService {
     private final MovimientoStockRepository movimientoStockRepository;
     private final ClienteIneRepository clienteIneRepository;
     private final SaldoFavorMovimientoRepository saldoFavorMovimientoRepository;
+    private final MovimientoCajaRepository movimientoCajaRepository;
     private final WhatsAppService whatsAppService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -317,11 +318,13 @@ public class VentaServiceImpl implements VentaService {
                     .build();
             movimientoCreditoRepository.save(mov);
 
-            cliente.setSaldoActual((cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0) + montoOriginal);
-            clienteRepository.save(cliente);
+             cliente.setSaldoActual((cliente.getSaldoActual() != null ? cliente.getSaldoActual() : 0) + montoOriginal);
+             clienteRepository.save(cliente);
+             registrarMovimientoCajaVenta(caja, venta, pagosNoCredito, usuario);
              caja.setSaldoActual(caja.getSaldoActual() + pagosNoCredito);
-            cajaRepository.save(caja);
-        } else {
+             cajaRepository.save(caja);
+         } else {
+             registrarMovimientoCajaVenta(caja, venta, request.total() - saldoFavorAplicado, usuario);
              caja.setSaldoActual(caja.getSaldoActual() + request.total() - saldoFavorAplicado);
              cajaRepository.save(caja);
          }
@@ -503,6 +506,12 @@ public class VentaServiceImpl implements VentaService {
                 Caja caja = venta.getCaja();
                 caja.setSaldoActual(caja.getSaldoActual() - venta.getTotal());
                 cajaRepository.save(caja);
+                movimientoCajaRepository.findByVentaIdVenta(id).forEach(movimiento -> {
+                    movimiento.setCancelado(true);
+                    movimiento.setFechaCancelacion(LocalDateTime.now());
+                    movimiento.setUsuarioCancelacion(autorizador);
+                    movimientoCajaRepository.save(movimiento);
+                });
             }
         } else if (venta.getTipoVenta() == TipoVenta.CREDITO) {
             creditoRepository.findByVentaIdVenta(id).ifPresent(credito -> {
@@ -794,15 +803,29 @@ public class VentaServiceImpl implements VentaService {
         venta.setEstado(EstadoVenta.COMPLETADA);
         ventaRepository.save(venta);
 
-        Persona usuario = obtenerPersonaActual();
-        Caja caja = venta.getCaja();
-        caja.setSaldoActual(caja.getSaldoActual() + venta.getTotal());
+         Persona usuario = obtenerPersonaActual();
+         Caja caja = venta.getCaja();
+         registrarMovimientoCajaVenta(caja, venta, venta.getTotal(), usuario);
+         caja.setSaldoActual(caja.getSaldoActual() + venta.getTotal());
         cajaRepository.save(caja);
 
         auditoriaService.registrar("Venta", id, AccionAuditoria.ACTUALIZACION.name(),
                 usuario.getUsuario(), "Pago registrado - Venta #" + id);
 
         return toResponse(venta, ventaDetalleRepository.findByVentaIdVenta(id));
+    }
+
+    private void registrarMovimientoCajaVenta(Caja caja, Venta venta, double monto, Persona usuario) {
+        if (monto <= 0.001) return;
+        movimientoCajaRepository.save(MovimientoCaja.builder()
+                .caja(caja)
+                .venta(venta)
+                .tipo(TipoMovimientoCaja.INGRESO)
+                .monto(monto)
+                .motivo("Venta #" + venta.getIdVenta())
+                .usuario(usuario)
+                .fecha(LocalDateTime.now())
+                .build());
     }
 
     @Override

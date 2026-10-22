@@ -237,9 +237,10 @@ public class CajaServiceImpl implements CajaService {
                             credito == null ? null : credito.getSaldoInteres(),
                             credito == null ? null : credito.getSaldoCapital(),
                              credito == null || credito.getEstado() == null ? null : credito.getEstado().name(),
-                            Boolean.TRUE.equals(m.getCancelado()),
-                            m.getFechaSolicitudCancelacion() == null ? null : "SOLICITADA",
-                            m.getMotivoCancelacion());
+                             Boolean.TRUE.equals(m.getCancelado()),
+                             m.getFechaSolicitudCancelacion() == null ? null : "SOLICITADA",
+                             m.getMotivoCancelacion(),
+                             m.getVenta() == null ? null : m.getVenta().getIdVenta());
     }
 
     @Override

@@ -43,6 +43,10 @@ public class MovimientoCaja {
     @JoinColumn(name = "id_abono")
     private Abono abono;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_venta")
+    private Venta venta;
+
     @Column(updatable = false)
     private LocalDateTime fecha;
 

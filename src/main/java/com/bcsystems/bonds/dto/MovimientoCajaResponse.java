@@ -25,4 +25,5 @@ public record MovimientoCajaResponse(
         Boolean cancelado,
         String estadoCancelacion,
         String motivoCancelacion
+        , Integer idVenta
 ) {}
