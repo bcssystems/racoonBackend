@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.security.core.Authentication;
 
 @Service
 @RequiredArgsConstructor
@@ -34,15 +35,26 @@ public class GastoServiceImpl implements GastoService {
 
         Persona usuario = obtenerPersonaActual();
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean puedeAutorizar = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("GASTOS_AUTORIZAR"));
+        LocalDateTime ahora = LocalDateTime.now();
         Gasto gasto = Gasto.builder()
                 .caja(caja)
                 .descripcion(request.descripcion())
                 .monto(request.monto())
                 .usuario(usuario)
-                .estado(EstadoGasto.PENDIENTE)
-                .fechaCreacion(LocalDateTime.now())
+                .estado(puedeAutorizar ? EstadoGasto.AUTORIZADO : EstadoGasto.PENDIENTE)
+                .autorizador(puedeAutorizar ? usuario : null)
+                .fechaCreacion(ahora)
+                .fechaAutorizacion(puedeAutorizar ? ahora : null)
                 .build();
+        if (puedeAutorizar) {
+            descontarDeCaja(caja, gasto.getMonto());
+        }
         gasto = gastoRepository.save(gasto);
+        auditoriaService.registrar("Gasto", gasto.getIdGasto(), "CREACION", usuario.getUsuario(),
+                puedeAutorizar ? "Gasto creado y autorizado automáticamente" : "Gasto solicitado para autorización");
 
         return toResponse(gasto);
     }
@@ -81,18 +93,14 @@ public class GastoServiceImpl implements GastoService {
 
         Persona autorizador = obtenerPersonaActual();
 
-        // Deduct from cash register when authorized
-        Caja caja = gasto.getCaja();
-        if (caja.getSaldoActual() < gasto.getMonto()) {
-            throw new InvalidEntryException("Saldo insuficiente en caja");
-        }
-        caja.setSaldoActual(caja.getSaldoActual() - gasto.getMonto());
-        cajaRepository.save(caja);
+        descontarDeCaja(gasto.getCaja(), gasto.getMonto());
 
         gasto.setEstado(EstadoGasto.AUTORIZADO);
         gasto.setAutorizador(autorizador);
         gasto.setFechaAutorizacion(LocalDateTime.now());
         gasto = gastoRepository.save(gasto);
+        auditoriaService.registrar("Gasto", gasto.getIdGasto(), "ACTUALIZACION", autorizador.getUsuario(),
+                "Gasto autorizado");
 
         return toResponse(gasto);
     }
@@ -120,6 +128,14 @@ public class GastoServiceImpl implements GastoService {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return personaRepository.findByUsuario(username)
                 .orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+    }
+
+    private void descontarDeCaja(Caja caja, double monto) {
+        if (caja.getSaldoActual() < monto) {
+            throw new InvalidEntryException("Saldo insuficiente en caja");
+        }
+        caja.setSaldoActual(caja.getSaldoActual() - monto);
+        cajaRepository.save(caja);
     }
 
     private GastoResponse toResponse(Gasto g) {

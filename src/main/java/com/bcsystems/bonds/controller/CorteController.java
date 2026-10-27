@@ -10,6 +10,8 @@ import com.bcsystems.bonds.repository.AbonoPagoRepository;
 import com.bcsystems.bonds.repository.AbonoRepository;
 import com.bcsystems.bonds.repository.CorteCajaRepository;
 import com.bcsystems.bonds.repository.CorteDetallePagoRepository;
+import com.bcsystems.bonds.repository.MovimientoCajaRepository;
+import com.bcsystems.bonds.repository.PersonaRepository;
 import com.bcsystems.bonds.service.CajaService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +20,13 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.context.SecurityContextHolder;
+import com.bcsystems.bonds.exception.NotFoundException;
+import com.bcsystems.bonds.exception.InvalidEntryException;
+import com.bcsystems.bonds.domain.Persona;
+import com.bcsystems.bonds.domain.MovimientoCaja;
+import com.bcsystems.bonds.service.AuditoriaService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,17 +40,26 @@ public class CorteController {
     private final AbonoRepository abonoRepository;
     private final AbonoPagoRepository abonoPagoRepository;
     private final CajaService cajaService;
+    private final MovimientoCajaRepository movimientoCajaRepository;
+    private final PersonaRepository personaRepository;
+    private final AuditoriaService auditoriaService;
 
     public CorteController(CorteCajaRepository corteCajaRepository,
                            CorteDetallePagoRepository corteDetallePagoRepository,
                            AbonoRepository abonoRepository,
                            AbonoPagoRepository abonoPagoRepository,
-                           CajaService cajaService) {
+                           CajaService cajaService,
+                           MovimientoCajaRepository movimientoCajaRepository,
+                           PersonaRepository personaRepository,
+                           AuditoriaService auditoriaService) {
         this.corteCajaRepository = corteCajaRepository;
         this.corteDetallePagoRepository = corteDetallePagoRepository;
         this.abonoRepository = abonoRepository;
         this.abonoPagoRepository = abonoPagoRepository;
         this.cajaService = cajaService;
+        this.movimientoCajaRepository = movimientoCajaRepository;
+        this.personaRepository = personaRepository;
+        this.auditoriaService = auditoriaService;
     }
 
     @GetMapping
@@ -61,6 +79,61 @@ public class CorteController {
     public ResponseEntity<CorteResponse> obtenerPorId(@PathVariable Integer id) {
         CorteCaja corte = corteCajaRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Corte no encontrado con id: " + id));
+        return ResponseEntity.ok(toResponse(corte));
+    }
+
+    @GetMapping("/{id}/movimientos")
+    @PreAuthorize("hasAuthority('CORTES_MOVIMIENTOS_VER')")
+    @Transactional(readOnly = true)
+    public ResponseEntity<List<com.bcsystems.bonds.dto.CorteMovimientoDto>> movimientos(@PathVariable Integer id) {
+        CorteCaja corte = corteCajaRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Corte no encontrado"));
+        List<com.bcsystems.bonds.dto.CorteMovimientoDto> movimientos = movimientoCajaRepository
+                .findByCajaIdCajaAndFechaBetweenOrderByFechaDesc(corte.getCaja().getIdCaja(),
+                        corte.getFechaApertura(), corte.getFechaCierre())
+                .stream().map(this::toMovimientoCorte).toList();
+        return ResponseEntity.ok(movimientos);
+    }
+
+    private com.bcsystems.bonds.dto.CorteMovimientoDto toMovimientoCorte(MovimientoCaja movimiento) {
+        String tipo = movimiento.getVenta() != null ? "VENTA"
+                : movimiento.getAbono() != null ? "ABONO"
+                : movimiento.getTipo().name();
+        String cliente = null;
+        String folioCredito = null;
+        if (movimiento.getAbono() != null && movimiento.getAbono().getCredito() != null) {
+            var credito = movimiento.getAbono().getCredito();
+            folioCredito = credito.getFolio();
+            if (credito.getCliente() != null) cliente = nombreCliente(credito.getCliente());
+        } else if (movimiento.getVenta() != null && movimiento.getVenta().getCliente() != null) {
+            cliente = nombreCliente(movimiento.getVenta().getCliente());
+        }
+        return new com.bcsystems.bonds.dto.CorteMovimientoDto(
+                movimiento.getIdMovimientoCaja(), movimiento.getFecha(), tipo, movimiento.getMotivo(),
+                movimiento.getMonto(), movimiento.getUsuario() != null ? movimiento.getUsuario().getUsuario() : null,
+                cliente, folioCredito,
+                movimiento.getVenta() != null ? movimiento.getVenta().getIdVenta() : null,
+                movimiento.getCancelado(), movimiento.getMotivoCancelacion());
+    }
+
+    private String nombreCliente(com.bcsystems.bonds.domain.Cliente cliente) {
+        return (cliente.getNombre() + " " + cliente.getApellidoPaterno()).trim();
+    }
+
+    @PostMapping("/{id}/recibir")
+    @PreAuthorize("hasAuthority('CORTES_RECIBIR')")
+    @Transactional
+    public ResponseEntity<CorteResponse> recibir(@PathVariable Integer id) {
+        CorteCaja corte = corteCajaRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Corte no encontrado"));
+        if (corte.getRecibidoPor() != null) throw new InvalidEntryException("El corte ya fue recibido");
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        Persona recibidor = personaRepository.findByUsuario(username)
+                .orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
+        corte.setRecibidoPor(recibidor);
+        corte.setFechaRecepcion(LocalDateTime.now());
+        corte = corteCajaRepository.save(corte);
+        auditoriaService.registrar("CorteCaja", id, "ACTUALIZACION", recibidor.getUsuario(), "Corte recibido por " + recibidor.getUsuario());
         return ResponseEntity.ok(toResponse(corte));
     }
 
@@ -129,6 +202,8 @@ public class CorteController {
                 java.util.List.of(),
                 totalReal > 0 ? totalReal : null,
                 totalReal > 0 ? diferencia : null,
-                abonosList);
+                 abonosList,
+                 c.getRecibidoPor() == null ? null : c.getRecibidoPor().getNombre() + " " + c.getRecibidoPor().getApellido(),
+                 c.getFechaRecepcion());
     }
 }

@@ -9,6 +9,7 @@ public interface CajaService {
     List<CajaResponse> listar();
     List<CajaResponse> listarPorSucursal(Integer idSucursal);
     CajaResponse obtenerPorId(Integer id);
+    double obtenerSaldoInicialSugerido(Integer id);
     CajaResponse crear(CajaRequest request);
     CajaResponse actualizar(Integer id, CajaRequest request);
     void eliminar(Integer id);

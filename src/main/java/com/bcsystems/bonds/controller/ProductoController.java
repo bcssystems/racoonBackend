@@ -11,6 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 import java.util.Map;
@@ -64,6 +66,40 @@ public class ProductoController {
     @PreAuthorize("hasAuthority('PRODUCTOS_VER')")
     public ResponseEntity<ProductoResponse> obtenerPorId(@PathVariable Integer id) {
         return ResponseEntity.ok(productoService.obtenerPorId(id));
+    }
+
+    @GetMapping("/{id}/multimedia")
+    @PreAuthorize("hasAuthority('PRODUCTOS_VER')")
+    public ResponseEntity<List<ProductoMultimediaResponse>> listarMultimedia(@PathVariable Integer id) {
+        return ResponseEntity.ok(productoService.listarMultimedia(id));
+    }
+
+    @PostMapping(value = "/{id}/multimedia", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('PRODUCTOS_EDITAR')")
+    public ResponseEntity<ProductoMultimediaResponse> agregarMultimedia(
+            @PathVariable Integer id, @RequestParam("archivo") MultipartFile archivo) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(productoService.agregarMultimedia(id, archivo));
+    }
+
+    @DeleteMapping("/{id}/multimedia/{idMultimedia}")
+    @PreAuthorize("hasAuthority('PRODUCTOS_EDITAR')")
+    public ResponseEntity<Void> eliminarMultimedia(@PathVariable Integer id, @PathVariable Integer idMultimedia) {
+        productoService.eliminarMultimedia(id, idMultimedia);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/multimedia/{idMultimedia}/principal")
+    @PreAuthorize("hasAuthority('PRODUCTOS_EDITAR')")
+    public ResponseEntity<ProductoMultimediaResponse> marcarMultimediaPrincipal(
+            @PathVariable Integer id, @PathVariable Integer idMultimedia) {
+        return ResponseEntity.ok(productoService.marcarMultimediaPrincipal(id, idMultimedia));
+    }
+
+    @PutMapping("/{id}/multimedia/orden")
+    @PreAuthorize("hasAuthority('PRODUCTOS_EDITAR')")
+    public ResponseEntity<List<ProductoMultimediaResponse>> ordenarMultimedia(
+            @PathVariable Integer id, @Valid @RequestBody ProductoMultimediaOrdenRequest request) {
+        return ResponseEntity.ok(productoService.ordenarMultimedia(id, request));
     }
 
     @PostMapping

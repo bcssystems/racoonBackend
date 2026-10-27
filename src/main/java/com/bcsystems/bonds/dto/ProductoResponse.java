@@ -22,7 +22,9 @@ public record ProductoResponse(
     Boolean activo,
     LocalDateTime fechaCreacion,
     LocalDateTime fechaActualizacion,
-    List<InventarioSucursalResponse> inventarioSucursales
+    List<InventarioSucursalResponse> inventarioSucursales,
+    String imagenPrincipalUrl,
+    long cantidadMultimedia
 ) {
     public record InventarioSucursalResponse(Integer id, Integer idSucursal, String sucursalNombre, Integer stock, Integer stockMinimo, Integer stockMaximo) {}
 }

@@ -38,6 +38,14 @@ public class CajaController {
         return ResponseEntity.ok(cajaService.obtenerPorId(id));
     }
 
+    @GetMapping("/{id}/apertura/saldo-inicial")
+    @PreAuthorize("hasAnyAuthority('CAJAS_APERTURA','VENTAS_CREAR')")
+    public ResponseEntity<SaldoInicialSugeridoResponse> saldoInicialSugerido(@PathVariable Integer id) {
+        CajaResponse caja = cajaService.obtenerPorId(id);
+        return ResponseEntity.ok(new SaldoInicialSugeridoResponse(
+                id, caja.tipo(), cajaService.obtenerSaldoInicialSugerido(id)));
+    }
+
     @PostMapping
     @PreAuthorize("hasAuthority('CAJAS_CREAR')")
     public ResponseEntity<CajaResponse> crear(@Valid @RequestBody CajaRequest request) {

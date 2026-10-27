@@ -57,4 +57,10 @@ public class CorteCaja {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_usuario", nullable = false)
     private Persona usuario;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_recibido_por")
+    private Persona recibidoPor;
+
+    private LocalDateTime fechaRecepcion;
 }

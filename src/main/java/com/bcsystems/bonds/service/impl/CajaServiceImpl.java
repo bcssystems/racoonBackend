@@ -39,6 +39,7 @@ public class CajaServiceImpl implements CajaService {
     private final CreditoRepository creditoRepository;
     private final com.bcsystems.bonds.service.ScoreCreditoService scoreCreditoService;
     private final WhatsAppService whatsAppService;
+    private final com.bcsystems.bonds.service.ConfiguracionService configuracionService;
 
     @Override
     public List<CajaResponse> listar() {
@@ -55,6 +56,12 @@ public class CajaServiceImpl implements CajaService {
     @Override
     public CajaResponse obtenerPorId(Integer id) {
         return toResponse(buscarOExcepcion(id));
+    }
+
+    @Override
+    public double obtenerSaldoInicialSugerido(Integer id) {
+        buscarOExcepcion(id);
+        return configuracionService.getValorDouble("fondoCajas", 0.0);
     }
 
     @Override
@@ -121,15 +128,18 @@ public class CajaServiceImpl implements CajaService {
         if (request.saldoInicial() < 0) {
             throw new InvalidEntryException("El saldo inicial no puede ser negativo");
         }
+        double saldoInicial = caja.getTipo() == TipoCaja.SECUNDARIA
+                ? request.saldoInicial()
+                : configuracionService.getValorDouble("fondoCajas", request.saldoInicial());
         caja.setEstado(CajaEstado.ABIERTA);
-        caja.setSaldoActual(request.saldoInicial());
+        caja.setSaldoActual(saldoInicial);
         caja.setFechaApertura(LocalDateTime.now());
         caja.setFechaCierre(null);
         caja = cajaRepository.save(caja);
 
         String usuario = obtenerUsuarioActual();
         auditoriaService.registrar("Caja", id, AccionAuditoria.CREACION.name(),
-                usuario, "Caja abierta con saldo inicial: $" + request.saldoInicial());
+                usuario, "Caja abierta con saldo inicial: $" + saldoInicial);
 
         return toResponse(caja);
     }
@@ -479,7 +489,7 @@ public class CajaServiceImpl implements CajaService {
                 saldoEsperado,
                 apertura, ahora, obtenerUsuarioActual(), detallePagos,
                 gastosPeriodo.stream().map(this::toGastoResponse).toList(),
-                totalReal, diferencia, abonosList);
+                totalReal, diferencia, abonosList, null, null);
     }
 
     @Override
@@ -541,7 +551,7 @@ public class CajaServiceImpl implements CajaService {
                 corte.getFechaCierre(), usuario, preview.detallePagos(),
                 preview.gastos(),
                 preview.totalReal(), preview.diferencia(),
-                preview.abonos());
+                preview.abonos(), null, null);
     }
 
     @Override
@@ -606,7 +616,9 @@ public class CajaServiceImpl implements CajaService {
                 java.util.List.of(),
                 totalReal > 0 ? totalReal : null,
                 totalReal > 0 ? diferencia : null,
-                abonosList);
+                abonosList,
+                corte.getRecibidoPor() == null ? null : corte.getRecibidoPor().getNombre() + " " + corte.getRecibidoPor().getApellido(),
+                corte.getFechaRecepcion());
     }
 
     private AbonoCorteDto toAbonoCorteDto(Abono a) {

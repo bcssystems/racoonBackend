@@ -26,5 +26,7 @@ public record CorteResponse(
         List<GastoResponse> gastos,
         Double totalReal,
         Double diferencia,
-        List<AbonoCorteDto> abonos
+        List<AbonoCorteDto> abonos,
+        String recibidoPor,
+        LocalDateTime fechaRecepcion
 ) {}

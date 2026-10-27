@@ -436,13 +436,20 @@ public class VentaServiceImpl implements VentaService {
         if (venta.getEstado() == EstadoVenta.CANCELADA) {
             throw new InvalidEntryException("La venta ya está cancelada");
         }
-        if (venta.getEstado() != EstadoVenta.SOLICITADA_CANCELACION) {
-            throw new InvalidEntryException("La venta no tiene una solicitud de cancelacion pendiente");
-        }
-
         boolean tienePermiso = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("VENTAS_CANCELAR")
-                        || a.getAuthority().equals("CANCELACIONES_AUTORIZAR"));
+                        || a.getAuthority().equals("CANCELACIONES_AUTORIZAR"))
+                || (autorizador.getRol() != null && autorizador.getRol().getNombre() != null
+                    && (autorizador.getRol().getNombre().equalsIgnoreCase("ADMINISTRADOR")
+                        || autorizador.getRol().getNombre().equalsIgnoreCase("SISTEMAS")));
+
+        boolean cancelacionDirecta = venta.getEstado() == EstadoVenta.COMPLETADA && tienePermiso;
+        if (!cancelacionDirecta && venta.getEstado() != EstadoVenta.SOLICITADA_CANCELACION) {
+            throw new InvalidEntryException("La venta no tiene una solicitud de cancelación pendiente");
+        }
+        if (venta.getEstado() == EstadoVenta.COMPLETADA && !tienePermiso) {
+            throw new InvalidEntryException("La venta requiere una solicitud de cancelación para autorización");
+        }
 
         if (!tienePermiso) {
             if (request == null || request.codigo() == null || request.codigo().isBlank()) {
@@ -461,6 +468,16 @@ public class VentaServiceImpl implements VentaService {
                 ventaRepository.save(venta);
                 throw new InvalidEntryException("El código de autorización expiró. Pide uno nuevo al administrador");
             }
+        }
+
+        if (cancelacionDirecta) {
+            String motivo = request == null ? null : request.motivo();
+            if (motivo == null || motivo.isBlank()) {
+                throw new InvalidEntryException("Debe indicar el motivo de cancelación");
+            }
+            venta.setMotivoCancelacion(motivo.trim());
+            venta.setSolicitanteCancelacion(autorizador);
+            venta.setFechaSolicitudCancelacion(LocalDateTime.now());
         }
 
         venta.setEstado(EstadoVenta.CANCELADA);

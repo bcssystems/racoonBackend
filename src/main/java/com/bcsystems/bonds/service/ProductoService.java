@@ -8,6 +8,11 @@ public interface ProductoService {
     Page<ProductoResponse> listar(String search, Boolean activo, Integer idSucursal, Integer idCategoria, Pageable pageable);
     Page<ProductoVentaResponse> listarParaVenta(String search, Integer idSucursal, Integer idCategoria, Pageable pageable);
     ProductoResponse obtenerPorId(Integer id);
+    java.util.List<ProductoMultimediaResponse> listarMultimedia(Integer idProducto);
+    ProductoMultimediaResponse agregarMultimedia(Integer idProducto, org.springframework.web.multipart.MultipartFile archivo);
+    void eliminarMultimedia(Integer idProducto, Integer idMultimedia);
+    ProductoMultimediaResponse marcarMultimediaPrincipal(Integer idProducto, Integer idMultimedia);
+    java.util.List<ProductoMultimediaResponse> ordenarMultimedia(Integer idProducto, ProductoMultimediaOrdenRequest request);
     ProductoResponse crear(ProductoRequest request);
     ProductoResponse actualizar(Integer id, ProductoRequest request);
     void eliminar(Integer id);

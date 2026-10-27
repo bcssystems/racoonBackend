@@ -258,7 +258,9 @@ public class DataSeedRunner implements CommandLineRunner {
         ));
         map.put("CORTES", List.of(
                 new String[]{"CORTES_VER", "Ver Cortes"},
-                new String[]{"CORTES_EDITAR", "Editar Cortes"}
+                new String[]{"CORTES_EDITAR", "Editar Cortes"},
+                new String[]{"CORTES_MOVIMIENTOS_VER", "Ver movimientos del corte"},
+                new String[]{"CORTES_RECIBIR", "Recibir cortes de caja"}
         ));
         map.put("PRODUCTOS", List.of(
                 new String[]{"PRODUCTOS_VER", "Ver Productos"},

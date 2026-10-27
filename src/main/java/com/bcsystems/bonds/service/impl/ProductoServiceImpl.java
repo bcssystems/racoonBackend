@@ -11,6 +11,15 @@ import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.AuditoriaService;
 import com.bcsystems.bonds.service.ProductoService;
 import com.bcsystems.bonds.service.WhatsAppService;
+import com.bcsystems.bonds.repository.ProductoMultimediaRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import com.bcsystems.bonds.util.CodigoGeneratorService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -35,6 +44,9 @@ public class ProductoServiceImpl implements ProductoService {
     private final CodigoGeneratorService codigoGenerator;
     private final AuditoriaService auditoriaService;
     private final WhatsAppService whatsAppService;
+    private final ProductoMultimediaRepository multimediaRepository;
+    @Value("${app.upload.dir:./uploads/multimedia}")
+    private String uploadDir;
 
     public ProductoServiceImpl(ProductoRepository productoRepository,
                                SucursalRepository sucursalRepository,
@@ -43,7 +55,8 @@ public class ProductoServiceImpl implements ProductoService {
                                CategoriaRepository categoriaRepository,
                                CodigoGeneratorService codigoGenerator,
                                AuditoriaService auditoriaService,
-                               WhatsAppService whatsAppService) {
+                               WhatsAppService whatsAppService,
+                               ProductoMultimediaRepository multimediaRepository) {
         this.productoRepository = productoRepository;
         this.sucursalRepository = sucursalRepository;
         this.inventarioSucursalRepository = inventarioSucursalRepository;
@@ -52,6 +65,7 @@ public class ProductoServiceImpl implements ProductoService {
         this.codigoGenerator = codigoGenerator;
         this.auditoriaService = auditoriaService;
         this.whatsAppService = whatsAppService;
+        this.multimediaRepository = multimediaRepository;
     }
 
     @Override
@@ -59,7 +73,12 @@ public class ProductoServiceImpl implements ProductoService {
         Page<Producto> page = productoRepository.buscarConFiltros(search, activo, idSucursal, idCategoria, pageable);
         List<Integer> ids = page.getContent().stream().map(Producto::getIdProducto).toList();
         Map<Integer, List<InventarioSucursalProjection>> inventarios = cargarInventarios(null, ids);
-        return page.map(p -> toResponse(p, inventarios.getOrDefault(p.getIdProducto(), List.of())));
+        Map<Integer, List<ProductoMultimedia>> multimedia = cargarMultimedia(ids);
+        return page.map(p -> {
+            List<ProductoMultimedia> archivos = multimedia.getOrDefault(p.getIdProducto(), List.of());
+            return toResponse(p, inventarios.getOrDefault(p.getIdProducto(), List.of()),
+                    imagenPrincipal(archivos), archivos.size());
+        });
     }
 
     @Transactional(readOnly = true)
@@ -82,6 +101,131 @@ public class ProductoServiceImpl implements ProductoService {
     @Override
     public ProductoResponse obtenerPorId(Integer id) {
         return toResponse(buscarOExcepcion(id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductoMultimediaResponse> listarMultimedia(Integer idProducto) {
+        buscarOExcepcion(idProducto);
+        return multimediaRepository.findByProductoIdProductoOrderByOrdenAscIdMultimediaAsc(idProducto)
+                .stream().map(this::toMultimediaResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public ProductoMultimediaResponse agregarMultimedia(Integer idProducto, MultipartFile archivo) {
+        Producto producto = buscarOExcepcion(idProducto);
+        if (archivo == null || archivo.isEmpty()) throw new InvalidEntryException("Selecciona un archivo válido");
+        if (archivo.getSize() > 20L * 1024 * 1024) throw new InvalidEntryException("El archivo no puede exceder 20 MB");
+
+        String original = archivo.getOriginalFilename() == null ? "archivo" : Paths.get(archivo.getOriginalFilename()).getFileName().toString();
+        String extension = "";
+        int punto = original.lastIndexOf('.');
+        if (punto >= 0 && punto < original.length() - 1) extension = original.substring(punto).replaceAll("[^.A-Za-z0-9]", "");
+        String extensionLower = extension.toLowerCase(Locale.ROOT);
+        String contentType = archivo.getContentType() == null ? "" : archivo.getContentType().toLowerCase(Locale.ROOT);
+        String tipo;
+        if (Set.of(".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif").contains(extensionLower)
+                && (contentType.startsWith("image/") || contentType.equals("application/octet-stream"))) tipo = "IMAGEN";
+        else if (Set.of(".mp4", ".webm", ".mov", ".ogg").contains(extensionLower)
+                && (contentType.startsWith("video/") || contentType.equals("application/octet-stream"))) tipo = "VIDEO";
+        else if (extensionLower.equals(".pdf")
+                && (contentType.equals("application/pdf") || contentType.equals("application/octet-stream"))) tipo = "DOCUMENTO";
+        else throw new InvalidEntryException("El archivo debe ser una imagen, video compatible o PDF válido");
+        String nombreGuardado = UUID.randomUUID() + extension;
+        Path directorio = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path destino = directorio.resolve(nombreGuardado).normalize();
+        if (!destino.startsWith(directorio)) throw new InvalidEntryException("Nombre de archivo no válido");
+        try {
+            Files.createDirectories(directorio);
+            Files.copy(archivo.getInputStream(), destino, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            throw new InvalidEntryException("No se pudo guardar el archivo");
+        }
+
+        boolean esPrimero = multimediaRepository.countByProductoIdProducto(idProducto) == 0 && tipo.equals("IMAGEN");
+        ProductoMultimedia media = multimediaRepository.save(ProductoMultimedia.builder()
+                .producto(producto).tipo(tipo).url("/uploads/" + nombreGuardado)
+                .nombreArchivo(original).orden(multimediaRepository.maxOrden(idProducto) + 1)
+                .esPrincipal(esPrimero).build());
+        auditoriaService.registrar("PRODUCTO", idProducto, AccionAuditoria.ACTUALIZACION.name(), obtenerUsuarioActual(),
+                "Se agregó archivo multimedia al producto: " + original);
+        return toMultimediaResponse(media);
+    }
+
+    @Override
+    @Transactional
+    public void eliminarMultimedia(Integer idProducto, Integer idMultimedia) {
+        buscarOExcepcion(idProducto);
+        ProductoMultimedia media = multimediaRepository.findById(idMultimedia)
+                .filter(m -> m.getProducto().getIdProducto().equals(idProducto))
+                .orElseThrow(() -> new NotFoundException("Archivo multimedia no encontrado"));
+        boolean eraPrincipal = Boolean.TRUE.equals(media.getEsPrincipal());
+        multimediaRepository.delete(media);
+        eliminarArchivo(media.getUrl());
+        if (eraPrincipal) multimediaRepository.findByProductoIdProductoOrderByOrdenAscIdMultimediaAsc(idProducto)
+                .stream().filter(m -> "IMAGEN".equals(m.getTipo())).findFirst()
+                .ifPresent(m -> { m.setEsPrincipal(true); multimediaRepository.save(m); });
+        auditoriaService.registrar("PRODUCTO", idProducto, AccionAuditoria.ACTUALIZACION.name(), obtenerUsuarioActual(),
+                "Se eliminó archivo multimedia " + idMultimedia);
+    }
+
+    @Override
+    @Transactional
+    public ProductoMultimediaResponse marcarMultimediaPrincipal(Integer idProducto, Integer idMultimedia) {
+        buscarOExcepcion(idProducto);
+        ProductoMultimedia seleccionada = multimediaRepository.findById(idMultimedia)
+                .filter(m -> m.getProducto().getIdProducto().equals(idProducto))
+                .orElseThrow(() -> new NotFoundException("Archivo multimedia no encontrado"));
+        if (!"IMAGEN".equals(seleccionada.getTipo())) throw new InvalidEntryException("Solo una imagen puede ser la principal");
+        multimediaRepository.findByProductoIdProductoOrderByOrdenAscIdMultimediaAsc(idProducto).forEach(m -> {
+            boolean principal = m.getIdMultimedia().equals(idMultimedia);
+            if (Boolean.TRUE.equals(m.getEsPrincipal()) != principal) { m.setEsPrincipal(principal); multimediaRepository.save(m); }
+        });
+        return toMultimediaResponse(seleccionada);
+    }
+
+    @Override
+    @Transactional
+    public List<ProductoMultimediaResponse> ordenarMultimedia(Integer idProducto, ProductoMultimediaOrdenRequest request) {
+        buscarOExcepcion(idProducto);
+        List<ProductoMultimedia> existentes = multimediaRepository.findByProductoIdProductoOrderByOrdenAscIdMultimediaAsc(idProducto);
+        List<Integer> ids = request.idsOrdenados();
+        if (ids.size() != existentes.size() || new HashSet<>(ids).size() != ids.size()
+                || !new HashSet<>(ids).equals(existentes.stream().map(ProductoMultimedia::getIdMultimedia).collect(Collectors.toSet()))) {
+            throw new InvalidEntryException("El orden debe incluir todos los archivos del producto una sola vez");
+        }
+        Map<Integer, ProductoMultimedia> porId = existentes.stream().collect(Collectors.toMap(ProductoMultimedia::getIdMultimedia, m -> m));
+        for (int i = 0; i < ids.size(); i++) { ProductoMultimedia m = porId.get(ids.get(i)); m.setOrden(i); multimediaRepository.save(m); }
+        return multimediaRepository.findByProductoIdProductoOrderByOrdenAscIdMultimediaAsc(idProducto)
+                .stream().map(this::toMultimediaResponse).toList();
+    }
+
+    private Map<Integer, List<ProductoMultimedia>> cargarMultimedia(Collection<Integer> ids) {
+        if (ids.isEmpty()) return Map.of();
+        return multimediaRepository.findByProductoIdProductoInOrderByOrdenAscIdMultimediaAsc(ids).stream()
+                .collect(Collectors.groupingBy(m -> m.getProducto().getIdProducto()));
+    }
+
+    private String imagenPrincipal(List<ProductoMultimedia> archivos) {
+        return archivos.stream().filter(m -> "IMAGEN".equals(m.getTipo()))
+                .sorted(Comparator.comparing((ProductoMultimedia m) -> !Boolean.TRUE.equals(m.getEsPrincipal()))
+                        .thenComparing(ProductoMultimedia::getOrden).thenComparing(ProductoMultimedia::getIdMultimedia))
+                .map(ProductoMultimedia::getUrl).findFirst().orElse(null);
+    }
+
+    private ProductoMultimediaResponse toMultimediaResponse(ProductoMultimedia media) {
+        return new ProductoMultimediaResponse(media.getIdMultimedia(), media.getProducto().getIdProducto(),
+                media.getTipo(), media.getUrl(), media.getNombreArchivo(), media.getEsPrincipal(),
+                media.getOrden(), media.getFechaSubida());
+    }
+
+    private void eliminarArchivo(String url) {
+        if (url == null || !url.startsWith("/uploads/")) return;
+        Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path archivo = dir.resolve(url.substring("/uploads/".length())).normalize();
+        if (!archivo.startsWith(dir)) return;
+        try { Files.deleteIfExists(archivo); } catch (IOException ignored) { }
     }
 
     @Transactional
@@ -512,7 +656,7 @@ public class ProductoServiceImpl implements ProductoService {
         if (movimiento.getCodigoAutorizacion() == null && !puedeAutorizar) {
             throw new InvalidEntryException("No hay código generado. Pídele al administrador generarlo");
         }
-        if (movimiento.getCodigoAutorizacion() != null) {
+        if (!puedeAutorizar && movimiento.getCodigoAutorizacion() != null) {
             if (request == null || request.codigoAutorizacion() == null
                     || !request.codigoAutorizacion().trim().equals(movimiento.getCodigoAutorizacion())) {
                 throw new InvalidEntryException("Código de autorización inválido");
@@ -753,6 +897,12 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private ProductoResponse toResponse(Producto p, List<InventarioSucursalProjection> inventarios) {
+        List<ProductoMultimedia> archivos = multimediaRepository.findByProductoIdProductoOrderByOrdenAscIdMultimediaAsc(p.getIdProducto());
+        return toResponse(p, inventarios, imagenPrincipal(archivos), archivos.size());
+    }
+
+    private ProductoResponse toResponse(Producto p, List<InventarioSucursalProjection> inventarios,
+                                        String imagenPrincipalUrl, long cantidadMultimedia) {
         List<ProductoResponse.InventarioSucursalResponse> inventario = inventarios.stream()
                 .map(i -> new ProductoResponse.InventarioSucursalResponse(
                         i.id(), i.idSucursal(), i.sucursalNombre(),
@@ -769,6 +919,6 @@ public class ProductoServiceImpl implements ProductoService {
                 p.getCategoria() != null ? p.getCategoria().getNombre() : null,
                 p.getUnidadMedida(),
                 p.getActivo(), p.getFechaCreacion(), p.getFechaActualizacion(),
-                inventario);
+                inventario, imagenPrincipalUrl, cantidadMultimedia);
     }
 }
