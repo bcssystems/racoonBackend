@@ -517,20 +517,31 @@ public class VentaServiceImpl implements VentaService {
             }
         }
 
-        if (venta.getTipoVenta() == TipoVenta.CONTADO) {
-            boolean tienePagos = !ventaPagoRepository.findByVentaIdVenta(id).isEmpty();
-            if (tienePagos) {
-                Caja caja = venta.getCaja();
-                caja.setSaldoActual(caja.getSaldoActual() - venta.getTotal());
-                cajaRepository.save(caja);
-                movimientoCajaRepository.findByVentaIdVenta(id).forEach(movimiento -> {
-                    movimiento.setCancelado(true);
-                    movimiento.setFechaCancelacion(LocalDateTime.now());
-                    movimiento.setUsuarioCancelacion(autorizador);
-                    movimientoCajaRepository.save(movimiento);
-                });
-            }
-        } else if (venta.getTipoVenta() == TipoVenta.CREDITO) {
+        List<MovimientoCaja> movimientosVenta = movimientoCajaRepository.findByVentaIdVenta(id);
+        double montoReversar = movimientosVenta.stream()
+                .filter(movimiento -> !Boolean.TRUE.equals(movimiento.getCancelado()))
+                .mapToDouble(MovimientoCaja::getMonto)
+                .sum();
+        if (montoReversar <= 0.001) {
+            montoReversar = ventaPagoRepository.findByVentaIdVenta(id).stream()
+                    .mapToDouble(VentaPago::getMonto)
+                    .sum();
+        }
+        if (montoReversar > 0.001) {
+            Caja caja = venta.getCaja();
+            caja.setSaldoActual(caja.getSaldoActual() - montoReversar);
+            cajaRepository.save(caja);
+            movimientosVenta.stream()
+                    .filter(movimiento -> !Boolean.TRUE.equals(movimiento.getCancelado()))
+                    .forEach(movimiento -> {
+                        movimiento.setCancelado(true);
+                        movimiento.setFechaCancelacion(LocalDateTime.now());
+                        movimiento.setUsuarioCancelacion(autorizador);
+                        movimientoCajaRepository.save(movimiento);
+                    });
+        }
+
+        if (venta.getTipoVenta() == TipoVenta.CREDITO) {
             creditoRepository.findByVentaIdVenta(id).ifPresent(credito -> {
                 if (credito.getEstado() == EstadoCredito.ACTIVO || credito.getEstado() == EstadoCredito.VENCIDO) {
                     Cliente cliente = credito.getCliente();

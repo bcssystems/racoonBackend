@@ -43,6 +43,9 @@ public class CorteCaja {
     private Double totalEgresos;
 
     @Column
+    private Double totalGastos;
+
+    @Column
     private Double totalAbonos;
 
     @Column(nullable = false)

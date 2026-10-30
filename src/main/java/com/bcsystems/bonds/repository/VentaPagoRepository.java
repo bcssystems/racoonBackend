@@ -13,7 +13,9 @@ import java.util.List;
 public interface VentaPagoRepository extends JpaRepository<VentaPago, Integer> {
     List<VentaPago> findByVentaIdVenta(Integer idVenta);
 
-    @Query("SELECT vp FROM VentaPago vp WHERE vp.venta.caja.idCaja = :idCaja AND vp.venta.fecha BETWEEN :inicio AND :fin")
+    @Query("SELECT vp FROM VentaPago vp WHERE vp.venta.caja.idCaja = :idCaja " +
+            "AND vp.venta.fecha BETWEEN :inicio AND :fin " +
+            "AND vp.venta.estado = com.bcsystems.bonds.domain.en.EstadoVenta.COMPLETADA")
     List<VentaPago> findByCajaAndFechaRange(@Param("idCaja") Integer idCaja,
                                              @Param("inicio") LocalDateTime inicio,
                                              @Param("fin") LocalDateTime fin);

@@ -412,18 +412,22 @@ public class CajaServiceImpl implements CajaService {
                 .mapToDouble(MovimientoCaja::getMonto).sum();
 
         List<Gasto> gastosPeriodo = gastoRepository
-                .findByCajaIdCajaAndFechaAutorizacionBetweenOrderByFechaAutorizacionAsc(id, apertura, ahora);
-        double totalGastos = gastosPeriodo.stream()
-                .mapToDouble(Gasto::getMonto).sum();
-
-        double saldoInicial = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos - totalContado;
-        double saldoEsperado = saldoInicial + totalVentas + totalIngresos - totalEgresos - totalGastos;
+                .findByCajaIdCajaAndFechaAutorizacionBetweenOrderByFechaAutorizacionAsc(id, apertura, ahora)
+                .stream()
+                .filter(gasto -> gasto.getEstado() == EstadoGasto.AUTORIZADO)
+                .toList();
+        double totalGastos = gastosPeriodo.stream().mapToDouble(Gasto::getMonto).sum();
 
         List<VentaPago> pagosEnRango = ventaPagoRepository.findByCajaAndFechaRange(id, apertura, ahora);
         List<Abono> abonosEnRango = abonoRepository
                 .findByCajaIdCajaAndFechaBetweenOrderByFechaDesc(id, apertura, ahora);
         abonosEnRango = abonosEnRango.stream().filter(a -> !Boolean.TRUE.equals(a.getCancelado())).toList();
         double totalAbonos = abonosEnRango.stream().mapToDouble(Abono::getMonto).sum();
+
+        double saldoInicial = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos
+                - totalContado - totalAbonos;
+        double saldoEsperado = saldoInicial + totalVentas + totalIngresos - totalEgresos
+                - totalGastos + totalAbonos;
 
         java.util.Map<Integer, TipoPago> tipoPorId = pagosEnRango.stream()
                 .map(VentaPago::getTipoPago)
@@ -449,6 +453,15 @@ public class CajaServiceImpl implements CajaService {
                 tipoPorId.putIfAbsent(idTipo, a.getTipoPago());
             }
         }
+
+        tipoPagoRepository.findByActivoTrueOrderByNombreAsc().stream()
+                .filter(tipo -> "EFECTIVO".equalsIgnoreCase(tipo.getNombre()))
+                .findFirst()
+                .ifPresent(efectivo -> {
+                    tipoPorId.putIfAbsent(efectivo.getIdTipoPago(), efectivo);
+                    montosPorTipo.merge(efectivo.getIdTipoPago(),
+                            saldoInicial + totalIngresos - totalEgresos - totalGastos, Double::sum);
+                });
 
         List<CorteDetallePagoDto> detallePagos = montosPorTipo.entrySet().stream()
                 .map(e -> new CorteDetallePagoDto(
@@ -509,6 +522,7 @@ public class CajaServiceImpl implements CajaService {
                 .totalVentasCredito(preview.totalVentasCredito())
                 .totalIngresos(preview.totalIngresos())
                 .totalEgresos(preview.totalEgresos())
+                .totalGastos(preview.totalGastos())
                 .totalAbonos(preview.totalAbonos())
                 .saldoFinalContado(preview.saldoFinalContado())
                 .fechaApertura(preview.fechaApertura())
@@ -603,17 +617,29 @@ public class CajaServiceImpl implements CajaService {
                         .stream().map(this::toAbonoCorteDto).toList()
                 : java.util.List.of();
 
+        List<Gasto> gastosPeriodo = corte.getCaja() != null && corte.getFechaApertura() != null
+                && corte.getFechaCierre() != null
+                ? gastoRepository.findByCajaIdCajaAndFechaAutorizacionBetweenOrderByFechaAutorizacionAsc(
+                        corte.getCaja().getIdCaja(), corte.getFechaApertura(), corte.getFechaCierre()).stream()
+                        .filter(gasto -> gasto.getEstado() == EstadoGasto.AUTORIZADO)
+                        .toList()
+                : java.util.List.of();
+        Double totalGastos = corte.getTotalGastos();
+        if (totalGastos == null) {
+            totalGastos = gastosPeriodo.stream().mapToDouble(Gasto::getMonto).sum();
+        }
+
         return new CorteResponse(
                 corte.getIdCorte(), corte.getCaja().getIdCaja(), corte.getCaja().getNombre(),
                 corte.getCaja().getSucursal().getIdSucursal(), corte.getCaja().getSucursal().getNombre(),
                 corte.getSaldoInicial(), corte.getTotalVentas(),
                 corte.getTotalVentasContado(), corte.getTotalVentasCredito(),
-                corte.getTotalIngresos(), corte.getTotalEgresos(), 0.0,
+                corte.getTotalIngresos(), corte.getTotalEgresos(), totalGastos,
                 corte.getTotalAbonos() != null ? corte.getTotalAbonos() : 0.0,
                 corte.getSaldoFinalContado(), null,
                 corte.getFechaApertura(), corte.getFechaCierre(),
                 corte.getUsuario().getUsuario(), detallePagos,
-                java.util.List.of(),
+                gastosPeriodo.stream().map(this::toGastoResponse).toList(),
                 totalReal > 0 ? totalReal : null,
                 totalReal > 0 ? diferencia : null,
                 abonosList,
