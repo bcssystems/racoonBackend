@@ -48,8 +48,18 @@ public interface ProductoRepository extends JpaRepository<Producto, Integer> {
     Page<Producto> buscarConFiltros(@Param("search") String search,
                                     @Param("activo") Boolean activo,
                                     @Param("idSucursal") Integer idSucursal,
-                                    @Param("idCategoria") Integer idCategoria,
-                                    Pageable pageable);
+                                     @Param("idCategoria") Integer idCategoria,
+                                     Pageable pageable);
+
+    @Query("SELECT p FROM Producto p LEFT JOIN p.categoria c WHERE p.activo = true " +
+           "AND (p.categoria IS NULL OR c.activo = true) " +
+           "AND (:search IS NULL OR LOWER(p.nombre) LIKE LOWER(CONCAT('%', :search, '%')) " +
+           "OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%')) " +
+           "OR LOWER(COALESCE(p.descripcion, '')) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "AND (:idCategoria IS NULL OR p.categoria.idCategoria = :idCategoria)")
+    Page<Producto> buscarParaCatalogo(@Param("search") String search,
+                                       @Param("idCategoria") Integer idCategoria,
+                                       Pageable pageable);
 
       @Query(value = "SELECT new com.bcsystems.bonds.dto.ProductoVentaProjection(p.idProducto, p.sku, p.nombre, p.precioBase, p.precio2, p.precio3, p.precio4, p.stockActual, p.costoPromedio, p.activo, p.unidadMedida) FROM Producto p WHERE p.activo = true " +
            "AND (:search IS NULL OR LOWER(p.nombre) LIKE LOWER(CONCAT('%', :search, '%')) " +
