@@ -8,6 +8,7 @@ public record CatalogoProductoResponse(
         String nombre,
         String descripcion,
         Double precio,
+        Integer stock,
         String categoriaNombre,
         String imagenPrincipalUrl,
         List<CatalogoMultimediaResponse> multimedia

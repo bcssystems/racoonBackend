@@ -79,7 +79,7 @@ public class CatalogoServiceImpl implements CatalogoService {
                         item.getEsPrincipal(), item.getOrden())).toList()
                 : List.of();
         return new CatalogoProductoResponse(producto.getIdProducto(), producto.getSku(), producto.getNombre(),
-                producto.getDescripcion(), producto.getPrecioBase(),
+                producto.getDescripcion(), producto.getPrecioBase(), producto.getStockActual(),
                 producto.getCategoria() != null ? producto.getCategoria().getNombre() : null,
                 principal, multimedia);
     }
