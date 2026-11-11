@@ -264,9 +264,12 @@ public class VentaServiceImpl implements VentaService {
             LocalDate fechaPrimerPago = request.fechaPrimerPago() != null
                     ? request.fechaPrimerPago() : fechaInicialParcialidad(periodicidad);
             LocalDate fechaVenta = LocalDate.now();
-            long diasPrimerPago = "SEMANAL".equals(periodicidad) ? 7L : 3L;
-            if (request.fechaPrimerPago() != null && !fechaPrimerPago.equals(fechaVenta.plusDays(diasPrimerPago))) {
-                throw new InvalidEntryException("La primera fecha de pago debe ser exactamente " + diasPrimerPago + " días después de la venta");
+            LocalDate fechaMinimaPrimerPago = fechaVenta;
+            LocalDate fechaMaximaPrimerPago = fechaVenta.plusDays(10);
+            if (request.fechaPrimerPago() != null
+                    && (fechaPrimerPago.isBefore(fechaMinimaPrimerPago)
+                    || fechaPrimerPago.isAfter(fechaMaximaPrimerPago))) {
+                throw new InvalidEntryException("La primera fecha de pago debe estar entre hoy y 10 días después de la venta");
             }
             LocalDateTime fechaVencimiento = fechaParcialidad(fechaPrimerPago, periodicidad, numeroParcialidades - 1);
             Persona cobrador = request.idCobrador() != null
@@ -929,7 +932,7 @@ public class VentaServiceImpl implements VentaService {
     }
 
     private LocalDate fechaInicialParcialidad(String periodicidad) {
-        return LocalDate.now().plusDays("SEMANAL".equals(periodicidad) ? 7 : 3);
+        return LocalDate.now();
     }
 
     private LocalDateTime fechaParcialidad(LocalDate primera, String periodicidad, int indice) {

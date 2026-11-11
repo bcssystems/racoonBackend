@@ -7,6 +7,7 @@ import com.bcsystems.bonds.domain.Persona;
 import com.bcsystems.bonds.domain.en.EstadoGasto;
 import com.bcsystems.bonds.dto.AbonoCorteDto;
 import com.bcsystems.bonds.dto.AbonoPagoResponse;
+import com.bcsystems.bonds.dto.AnticipoCorteDto;
 import com.bcsystems.bonds.dto.CorteDetallePagoDto;
 import com.bcsystems.bonds.dto.CorteDetallePagoUpdateRequest;
 import com.bcsystems.bonds.dto.CorteMovimientoDto;
@@ -18,6 +19,9 @@ import com.bcsystems.bonds.repository.CorteDetallePagoRepository;
 import com.bcsystems.bonds.repository.GastoRepository;
 import com.bcsystems.bonds.repository.MovimientoCajaRepository;
 import com.bcsystems.bonds.repository.PersonaRepository;
+import com.bcsystems.bonds.repository.VentaPagoRepository;
+import com.bcsystems.bonds.domain.VentaPago;
+import com.bcsystems.bonds.domain.en.TipoVenta;
 import com.bcsystems.bonds.service.CajaService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +53,7 @@ public class CorteController {
     private final GastoRepository gastoRepository;
     private final PersonaRepository personaRepository;
     private final AuditoriaService auditoriaService;
+    private final VentaPagoRepository ventaPagoRepository;
 
     public CorteController(CorteCajaRepository corteCajaRepository,
                            CorteDetallePagoRepository corteDetallePagoRepository,
@@ -58,7 +63,8 @@ public class CorteController {
                            MovimientoCajaRepository movimientoCajaRepository,
                            GastoRepository gastoRepository,
                            PersonaRepository personaRepository,
-                           AuditoriaService auditoriaService) {
+                           AuditoriaService auditoriaService,
+                           VentaPagoRepository ventaPagoRepository) {
         this.corteCajaRepository = corteCajaRepository;
         this.corteDetallePagoRepository = corteDetallePagoRepository;
         this.abonoRepository = abonoRepository;
@@ -68,6 +74,7 @@ public class CorteController {
         this.gastoRepository = gastoRepository;
         this.personaRepository = personaRepository;
         this.auditoriaService = auditoriaService;
+        this.ventaPagoRepository = ventaPagoRepository;
     }
 
     @GetMapping
@@ -181,12 +188,15 @@ public class CorteController {
                         d.getMonto(),
                         d.getMontoReal()))
                 .toList();
+        boolean existeConteoReal = detallePagos.stream().anyMatch(d -> d.montoReal() != null);
         double totalReal = detallePagos.stream()
                 .filter(d -> d.montoReal() != null)
                 .mapToDouble(CorteDetallePagoDto::montoReal)
                 .sum();
         double sistema = detallePagos.stream().mapToDouble(CorteDetallePagoDto::monto).sum();
-        double diferencia = totalReal > 0 ? totalReal - sistema : 0.0;
+        double diferencia = existeConteoReal ? totalReal - sistema : 0.0;
+        List<AnticipoCorteDto> anticipos = obtenerAnticipos(c.getCaja().getIdCaja(), c.getFechaApertura(), c.getFechaCierre());
+        double totalAnticipos = anticipos.stream().mapToDouble(a -> a.monto() == null ? 0 : a.monto()).sum();
 
         List<Gasto> gastosPeriodo = c.getCaja() != null && c.getFechaApertura() != null
                 && c.getFechaCierre() != null
@@ -233,16 +243,35 @@ public class CorteController {
                 c.getSaldoInicial(), c.getTotalVentas(),
                 c.getTotalVentasContado(), c.getTotalVentasCredito(),
                 c.getTotalIngresos(), c.getTotalEgresos(), totalGastos,
-                c.getTotalAbonos() != null ? c.getTotalAbonos() : 0.0,
+                 c.getTotalAbonos() != null ? c.getTotalAbonos() : 0.0,
+                 totalAnticipos,
                 c.getSaldoFinalContado(), null,
                 c.getFechaApertura(), c.getFechaCierre(),
                 c.getUsuario().getUsuario(), detallePagos,
                 gastosPeriodo.stream().map(this::toGastoResponse).toList(),
-                totalReal > 0 ? totalReal : null,
-                totalReal > 0 ? diferencia : null,
-                abonosList,
+                 existeConteoReal ? totalReal : null,
+                 existeConteoReal ? diferencia : null,
+                 abonosList,
+                 anticipos,
                 c.getRecibidoPor() == null ? null : c.getRecibidoPor().getNombre() + " " + c.getRecibidoPor().getApellido(),
                 c.getFechaRecepcion());
+    }
+
+    private List<AnticipoCorteDto> obtenerAnticipos(Integer idCaja, LocalDateTime inicio, LocalDateTime fin) {
+        if (idCaja == null || inicio == null || fin == null) return List.of();
+        return ventaPagoRepository.findByCajaAndFechaRange(idCaja, inicio, fin).stream()
+                .filter(vp -> vp.getVenta() != null && vp.getVenta().getTipoVenta() == TipoVenta.CREDITO)
+                .filter(vp -> vp.getTipoPago() != null && !esPagoCredito(vp))
+                .map(vp -> new AnticipoCorteDto(
+                        vp.getVenta().getIdVenta(),
+                        vp.getVenta().getCliente() == null ? null : vp.getVenta().getCliente().getNombre() + " " + vp.getVenta().getCliente().getApellidoPaterno(),
+                        vp.getVenta().getFecha(), vp.getTipoPago().getNombre(), vp.getMonto()))
+                .toList();
+    }
+
+    private boolean esPagoCredito(VentaPago pago) {
+        String nombre = pago.getTipoPago().getNombre();
+        return nombre != null && ("credito".equalsIgnoreCase(nombre) || "crédito".equalsIgnoreCase(nombre));
     }
 
     private com.bcsystems.bonds.dto.GastoResponse toGastoResponse(Gasto gasto) {

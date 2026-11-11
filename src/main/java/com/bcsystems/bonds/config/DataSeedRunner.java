@@ -283,13 +283,22 @@ public class DataSeedRunner implements CommandLineRunner {
                 new String[]{"CLIENTES_VER", "Ver Clientes"},
                 new String[]{"CLIENTES_CREAR", "Crear Clientes"},
                 new String[]{"CLIENTES_EDITAR", "Editar Clientes"},
-                new String[]{"CLIENTES_ELIMINAR", "Eliminar Clientes"}
+                new String[]{"CLIENTES_ELIMINAR", "Eliminar Clientes"},
+                new String[]{"CLIENTES_UBICACION_VER", "Ver ubicación de clientes"},
+                new String[]{"CLIENTES_UBICACION_EDITAR", "Editar ubicación de clientes"},
+                new String[]{"CLIENTES_GEOCODIFICAR", "Geocodificar clientes"}
         ));
         map.put("CREDITOS", List.of(
                 new String[]{"CREDITOS_VER", "Ver Creditos"},
                 new String[]{"CREDITOS_ABONAR", "Registrar Abonos"},
                 new String[]{"CREDITOS_ASIGNAR", "Asignar cobradores"},
-                new String[]{"CREDITOS_CONDONAR_INTERES", "Condonar intereses"}
+                new String[]{"CREDITOS_CONDONAR_INTERES", "Condonar intereses"},
+                new String[]{"CREDITOS_SOLICITAR", "Solicitar crédito"},
+                new String[]{"CREDITOS_SOLICITUDES_VER", "Ver solicitudes de crédito"},
+                new String[]{"CREDITOS_SOLICITUDES_AUTORIZAR", "Autorizar solicitudes de crédito"},
+                new String[]{"CREDITOS_SOLICITUDES_RECHAZAR", "Rechazar solicitudes de crédito"},
+                new String[]{"CREDITOS_DOCUMENTOS_VER", "Ver documentos de crédito"},
+                new String[]{"CREDITOS_DOCUMENTOS_CARGAR", "Cargar documentos de crédito"}
         ));
         map.put("COBRANZA", List.of(
                 new String[]{"COBRANZA_VER", "Ver cobranza"},

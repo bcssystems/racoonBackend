@@ -23,5 +23,8 @@ public record ClienteRequest(
         String representanteLegal,
         String direccionEntrega,
         Boolean tieneCredito,
-        Double limiteCredito
+        Double limiteCredito,
+        Double latitud,
+        Double longitud,
+        String precisionUbicacion
 ) {}

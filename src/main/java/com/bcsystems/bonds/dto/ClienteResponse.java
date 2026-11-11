@@ -32,6 +32,12 @@ public record ClienteResponse(
          Integer scoreCredito,
         Boolean enListaNegra,
         LocalDateTime fechaListaNegra,
-        String motivoListaNegra,
-        Boolean tieneIne
+         String motivoListaNegra,
+         Boolean tieneIne,
+         Double latitud,
+         Double longitud,
+         String direccionNormalizada,
+         String precisionUbicacion,
+         String estadoGeocodificacion,
+         LocalDateTime geocodificadoEn
 ) {}

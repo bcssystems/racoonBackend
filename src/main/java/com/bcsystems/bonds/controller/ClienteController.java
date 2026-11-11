@@ -21,11 +21,14 @@ public class ClienteController {
 
     private final ClienteService clienteService;
     private final com.bcsystems.bonds.service.SaldoFavorService saldoFavorService;
+    private final com.bcsystems.bonds.service.GeocodificacionService geocodificacionService;
 
     public ClienteController(ClienteService clienteService,
-                             com.bcsystems.bonds.service.SaldoFavorService saldoFavorService) {
+                             com.bcsystems.bonds.service.SaldoFavorService saldoFavorService,
+                             com.bcsystems.bonds.service.GeocodificacionService geocodificacionService) {
         this.clienteService = clienteService;
         this.saldoFavorService = saldoFavorService;
+        this.geocodificacionService = geocodificacionService;
     }
 
     @GetMapping("/stats")
@@ -79,6 +82,18 @@ public class ClienteController {
     @PreAuthorize("hasAuthority('CLIENTES_EDITAR')")
     public ResponseEntity<ClienteResponse> actualizar(@PathVariable Integer id, @Valid @RequestBody ClienteRequest request) {
         return ResponseEntity.ok(clienteService.actualizar(id, request));
+    }
+
+    @PostMapping("/{id}/geocodificar")
+    @PreAuthorize("hasAnyAuthority('CLIENTES_EDITAR','CLIENTES_UBICACION_EDITAR','CLIENTES_GEOCODIFICAR')")
+    public ResponseEntity<ClienteUbicacionResponse> geocodificar(@PathVariable Integer id) {
+        return ResponseEntity.ok(geocodificacionService.geocodificar(id));
+    }
+
+    @PutMapping("/{id}/ubicacion")
+    @PreAuthorize("hasAnyAuthority('CLIENTES_EDITAR','CLIENTES_UBICACION_EDITAR')")
+    public ResponseEntity<ClienteUbicacionResponse> actualizarUbicacion(@PathVariable Integer id, @RequestBody ClienteUbicacionRequest request) {
+        return ResponseEntity.ok(geocodificacionService.actualizar(id, request));
     }
 
     @PutMapping("/{id}/lista-negra")

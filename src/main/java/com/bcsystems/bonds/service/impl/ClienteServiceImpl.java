@@ -96,8 +96,12 @@ public class ClienteServiceImpl implements ClienteService {
                 .representanteLegal(request.representanteLegal())
                 .direccionEntrega(request.direccionEntrega())
                 .tieneCredito(request.tieneCredito() != null && request.tieneCredito())
-                .limiteCredito(request.limiteCredito())
-                .saldoActual(0.0)
+                 .limiteCredito(request.limiteCredito())
+                 .latitud(request.latitud())
+                 .longitud(request.longitud())
+                 .precisionUbicacion(request.precisionUbicacion())
+                 .estadoGeocodificacion(request.latitud() != null && request.longitud() != null ? "COMPLETADO" : "PENDIENTE")
+                 .saldoActual(0.0)
                 .enListaNegra(false)
                 .activo(true)
                 .fechaRegistro(LocalDateTime.now())
@@ -113,6 +117,7 @@ public class ClienteServiceImpl implements ClienteService {
     @Transactional
     public ClienteResponse actualizar(Integer id, ClienteRequest request) {
         Cliente cliente = buscarOExcepcion(id);
+        String direccionAnterior = fingerprintDireccion(cliente.getCp(), cliente.getEstado(), cliente.getMunicipio(), cliente.getColonia(), cliente.getCalle(), cliente.getNumExt(), cliente.getNumInt());
         cliente.setNombre(request.nombre());
         cliente.setApellidoPaterno(request.apellidoPaterno());
         cliente.setApellidoMaterno(request.apellidoMaterno());
@@ -134,6 +139,18 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.setDireccionEntrega(request.direccionEntrega());
         cliente.setTieneCredito(request.tieneCredito() != null && request.tieneCredito());
         cliente.setLimiteCredito(request.limiteCredito());
+        String direccionNueva = fingerprintDireccion(request.cp(), request.estado(), request.municipio(), request.colonia(), request.calle(), request.numExt(), request.numInt());
+        boolean direccionCambio = !direccionAnterior.equals(direccionNueva);
+        if (direccionCambio && (request.precisionUbicacion() == null || request.precisionUbicacion().isBlank())) {
+            cliente.setLatitud(null); cliente.setLongitud(null); cliente.setDireccionNormalizada(null);
+            cliente.setPrecisionUbicacion(null); cliente.setEstadoGeocodificacion("PENDIENTE"); cliente.setGeocodificadoEn(null);
+        } else if (request.latitud() != null && request.longitud() != null) {
+            cliente.setLatitud(request.latitud());
+            cliente.setLongitud(request.longitud());
+            cliente.setPrecisionUbicacion(request.precisionUbicacion());
+            cliente.setEstadoGeocodificacion("COMPLETADO");
+            cliente.setGeocodificadoEn(LocalDateTime.now());
+        }
         cliente = clienteRepository.save(cliente);
 
         auditoriaService.registrar("Cliente", id, "ACTUALIZACION",
@@ -258,6 +275,10 @@ public class ClienteServiceImpl implements ClienteService {
         return auth != null ? auth.getName() : "SISTEMA";
     }
 
+    private String fingerprintDireccion(String... partes) {
+        return java.util.Arrays.stream(partes).map(v -> v == null ? "" : v.trim().toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.joining("|"));
+    }
+
     private ClienteIneResponse toIneResponse(ClienteIne ine) {
         return new ClienteIneResponse(
                 ine.getIdClienteIne(), ine.getCliente().getIdCliente(),
@@ -280,6 +301,7 @@ public class ClienteServiceImpl implements ClienteService {
                 c.getActivo(), c.getFechaRegistro(),
                  c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(), c.getSaldoFavor(), c.getScoreCredito(),
                 c.getEnListaNegra(), c.getFechaListaNegra(), c.getMotivoListaNegra(),
-                tieneIne);
+                 tieneIne, c.getLatitud(), c.getLongitud(), c.getDireccionNormalizada(), c.getPrecisionUbicacion(),
+                 c.getEstadoGeocodificacion(), c.getGeocodificadoEn());
     }
 }

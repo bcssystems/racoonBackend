@@ -97,6 +97,21 @@ public class Cliente {
     @Column(length = 300)
     private String motivoListaNegra;
 
+    private Double latitud;
+
+    private Double longitud;
+
+    @Column(length = 500)
+    private String direccionNormalizada;
+
+    @Column(length = 40)
+    private String precisionUbicacion;
+
+    @Column(length = 30)
+    private String estadoGeocodificacion;
+
+    private LocalDateTime geocodificadoEn;
+
     @Column(nullable = false)
     private Boolean activo;
 

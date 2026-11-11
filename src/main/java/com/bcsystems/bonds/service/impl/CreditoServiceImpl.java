@@ -260,7 +260,8 @@ public class CreditoServiceImpl implements CreditoService {
                 c.getActivo(), c.getFechaRegistro(),
                  c.getTieneCredito(), c.getLimiteCredito(), c.getSaldoActual(), c.getSaldoFavor(), c.getScoreCredito(),
                 c.getEnListaNegra(), c.getFechaListaNegra(), c.getMotivoListaNegra(),
-                tieneIne);
+                 tieneIne, c.getLatitud(), c.getLongitud(), c.getDireccionNormalizada(), c.getPrecisionUbicacion(),
+                 c.getEstadoGeocodificacion(), c.getGeocodificadoEn());
 
         String titular = configuracionService.getValor("titularPagare", "PRISCILA ARONG KIM LOPEZ");
         double tasaMora = configuracionService.getValorDouble("tasaInteresMoraPagare", 5.0);
@@ -388,7 +389,8 @@ public class CreditoServiceImpl implements CreditoService {
                 Math.max(0, programado - pagado), p.getEstado(), c.getIdCredito(), c.getFolio(), cliente.getIdCliente(),
                 nombre, cliente.getTelefono(), direccion, c.getPeriodicidad(), c.getNumeroParcialidades(),
                 c.getCobrador() == null ? null : c.getCobrador().getIdPersona(),
-                c.getCobrador() == null ? null : c.getCobrador().getNombre() + " " + c.getCobrador().getApellido());
+                c.getCobrador() == null ? null : c.getCobrador().getNombre() + " " + c.getCobrador().getApellido(),
+                cliente.getLatitud(), cliente.getLongitud(), cliente.getPrecisionUbicacion());
     }
 
     private Persona obtenerPersonaActual() {

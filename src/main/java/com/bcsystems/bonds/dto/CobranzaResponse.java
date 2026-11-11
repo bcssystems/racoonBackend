@@ -19,5 +19,8 @@ public record CobranzaResponse(
         String periodicidad,
         Integer numeroParcialidades,
         Integer idCobrador,
-        String cobradorNombre
+        String cobradorNombre,
+        Double latitud,
+        Double longitud,
+        String precisionUbicacion
 ) {}

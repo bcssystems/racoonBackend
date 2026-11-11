@@ -17,6 +17,7 @@ public record CorteResponse(
         Double totalEgresos,
         Double totalGastos,
         Double totalAbonos,
+        Double totalAnticipos,
         Double saldoFinalContado,
         Double saldoEsperado,
         LocalDateTime fechaApertura,
@@ -27,6 +28,7 @@ public record CorteResponse(
         Double totalReal,
         Double diferencia,
         List<AbonoCorteDto> abonos,
+        List<AnticipoCorteDto> anticipos,
         String recibidoPor,
         LocalDateTime fechaRecepcion
 ) {}
