@@ -21,8 +21,6 @@ public class SolicitudCredito {
     @Column(nullable = false) private Double montoSolicitado;
     private Double montoSugerido;
     private Double montoAprobado;
-    private Integer parcialidadesSolicitadas;
-    private Integer parcialidadesAprobadas;
     @Lob @Column(columnDefinition = "TEXT") private String encuestaJson;
     @Column(length = 1000) private String observaciones;
     @Column(nullable = false) @Builder.Default private LocalDateTime fechaSolicitud = LocalDateTime.now();

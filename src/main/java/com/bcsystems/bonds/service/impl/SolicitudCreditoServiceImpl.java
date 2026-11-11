@@ -37,13 +37,15 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
             throw new InvalidEntryException("Cliente y monto solicitado son obligatorios");
         Cliente cliente = clienteRepository.findById(request.idCliente()).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
         if (Boolean.TRUE.equals(cliente.getEnListaNegra())) throw new InvalidEntryException("El cliente está en lista negra");
-        if (solicitudRepository.findByClienteIdClienteOrderByFechaSolicitudDesc(request.idCliente()).stream().anyMatch(s -> "PENDIENTE".equals(s.getEstado())))
-            throw new InvalidEntryException("El cliente ya tiene una solicitud pendiente");
+        if (Boolean.TRUE.equals(cliente.getTieneCredito())) throw new InvalidEntryException("El cliente ya tiene un crédito aprobado");
+        if (solicitudRepository.findByClienteIdClienteOrderByFechaSolicitudDesc(request.idCliente()).stream()
+                .anyMatch(s -> "PENDIENTE".equals(s.getEstado()) || "APROBADA".equals(s.getEstado())))
+            throw new InvalidEntryException("El cliente ya tiene una solicitud pendiente o un crédito aprobado");
         Persona solicitante = usuarioActual();
         double sugerido = calcularSugerido(request.encuestaJson(), request.montoSolicitado(), cliente.getScoreCredito());
         SolicitudCredito solicitud = SolicitudCredito.builder().cliente(cliente).solicitante(solicitante)
                 .montoSolicitado(request.montoSolicitado()).montoSugerido(sugerido)
-                .parcialidadesSolicitadas(request.parcialidadesSolicitadas()).encuestaJson(request.encuestaJson())
+                .encuestaJson(request.encuestaJson())
                 .observaciones(request.observaciones()).build();
         solicitud = solicitudRepository.save(solicitud);
         auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "CREACION", solicitante.getUsuario(), "Solicitud de crédito creada");
@@ -90,7 +92,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
             documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(id).forEach(d -> cargados.add(d.getTipo()));
             if (!cargados.containsAll(requeridos)) throw new InvalidEntryException("La solicitud requiere INE frontal, INE trasera, comprobante y pagaré");
             double monto = request.montoAprobado() == null ? s.getMontoSugerido() : request.montoAprobado();
-            aprobar(s, monto, request.parcialidadesAprobadas() == null ? s.getParcialidadesSolicitadas() : request.parcialidadesAprobadas(), request.observaciones());
+            aprobar(s, monto, request.observaciones());
         } else { s.setEstado("RECHAZADA"); s.setObservaciones(request.observaciones()); }
         s.setResolutor(usuarioActual()); s.setFechaResolucion(LocalDateTime.now());
         solicitudRepository.save(s);
@@ -98,9 +100,9 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         return toResponse(s);
     }
 
-    private void aprobar(SolicitudCredito s, double monto, Integer parcialidades, String observacion) {
+    private void aprobar(SolicitudCredito s, double monto, String observacion) {
         if (monto <= 0) throw new InvalidEntryException("El monto aprobado debe ser mayor a cero");
-        s.setEstado("APROBADA"); s.setMontoAprobado(monto); s.setParcialidadesAprobadas(parcialidades); s.setObservaciones(observacion);
+        s.setEstado("APROBADA"); s.setMontoAprobado(monto); s.setObservaciones(observacion);
         s.getCliente().setTieneCredito(true); s.getCliente().setLimiteCredito(monto); clienteRepository.save(s.getCliente());
     }
 
@@ -115,5 +117,5 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
     private boolean puedeAutorizar() { Authentication a = SecurityContextHolder.getContext().getAuthentication(); return a != null && a.getAuthorities().stream().anyMatch(x -> "CREDITOS_SOLICITUDES_AUTORIZAR".equals(x.getAuthority())); }
     private boolean puedeResolver(boolean aprobar) { Authentication a = SecurityContextHolder.getContext().getAuthentication(); String permiso = aprobar ? "CREDITOS_SOLICITUDES_AUTORIZAR" : "CREDITOS_SOLICITUDES_RECHAZAR"; return a != null && a.getAuthorities().stream().anyMatch(x -> permiso.equals(x.getAuthority())); }
     private Persona usuarioActual() { String u = SecurityContextHolder.getContext().getAuthentication().getName(); return personaRepository.findByUsuario(u).orElseThrow(() -> new NotFoundException("Usuario no encontrado")); }
-    private SolicitudCreditoResponse toResponse(SolicitudCredito s) { List<SolicitudCreditoDocumentoResponse> docs = documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(s.getIdSolicitud()).stream().map(d -> new SolicitudCreditoDocumentoResponse(d.getIdDocumento(), d.getTipo(), d.getUrl(), d.getNombreArchivo(), d.getMimeType(), d.getFechaCarga())).toList(); return new SolicitudCreditoResponse(s.getIdSolicitud(), s.getCliente().getIdCliente(), (s.getCliente().getNombre() + " " + s.getCliente().getApellidoPaterno()).trim(), s.getEstado(), s.getMontoSolicitado(), s.getMontoSugerido(), s.getMontoAprobado(), s.getParcialidadesSolicitadas(), s.getParcialidadesAprobadas(), s.getEncuestaJson(), s.getObservaciones(), s.getSolicitante().getUsuario(), s.getResolutor() == null ? null : s.getResolutor().getUsuario(), s.getFechaSolicitud(), s.getFechaResolucion(), docs); }
+    private SolicitudCreditoResponse toResponse(SolicitudCredito s) { List<SolicitudCreditoDocumentoResponse> docs = documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(s.getIdSolicitud()).stream().map(d -> new SolicitudCreditoDocumentoResponse(d.getIdDocumento(), d.getTipo(), d.getUrl(), d.getNombreArchivo(), d.getMimeType(), d.getFechaCarga())).toList(); return new SolicitudCreditoResponse(s.getIdSolicitud(), s.getCliente().getIdCliente(), (s.getCliente().getNombre() + " " + s.getCliente().getApellidoPaterno()).trim(), s.getEstado(), s.getMontoSolicitado(), s.getMontoSugerido(), s.getMontoAprobado(), s.getEncuestaJson(), s.getObservaciones(), s.getSolicitante().getUsuario(), s.getResolutor() == null ? null : s.getResolutor().getUsuario(), s.getFechaSolicitud(), s.getFechaResolucion(), docs); }
 }
