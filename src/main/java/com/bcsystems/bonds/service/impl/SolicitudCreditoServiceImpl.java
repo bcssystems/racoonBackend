@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +31,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
     private final ClienteRepository clienteRepository;
     private final PersonaRepository personaRepository;
     private final AuditoriaService auditoriaService;
-    @Value("${app.upload.dir:./uploads/multimedia}") private String uploadDir;
+    @Value("${app.upload.private-dir:./uploads/privados}") private String uploadDir;
 
     @Override @Transactional
     public SolicitudCreditoResponse crear(SolicitudCreditoRequest request) {
@@ -69,16 +71,31 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         String mime = archivo.getContentType() == null ? "" : archivo.getContentType().toLowerCase(Locale.ROOT);
         if (!(mime.startsWith("image/") || "application/pdf".equals(mime))) throw new InvalidEntryException("Solo se permiten imágenes o PDF");
         try {
-            Path dir = Paths.get(uploadDir).toAbsolutePath().normalize(); Files.createDirectories(dir);
+            Path dir = Paths.get(uploadDir, "solicitudes-credito", String.valueOf(id)).toAbsolutePath().normalize(); Files.createDirectories(dir);
             String original = archivo.getOriginalFilename() == null ? "documento" : Paths.get(archivo.getOriginalFilename()).getFileName().toString();
             String ext = original.contains(".") ? original.substring(original.lastIndexOf('.')) : "";
-            String nombre = UUID.randomUUID() + "-solicitud-" + tipo.toLowerCase(Locale.ROOT) + ext;
+            String nombre = UUID.randomUUID() + "-" + tipo.toLowerCase(Locale.ROOT) + ext;
             Path destino = dir.resolve(nombre).normalize();
             if (!destino.startsWith(dir)) throw new InvalidEntryException("Nombre de archivo inválido");
             Files.copy(archivo.getInputStream(), destino, StandardCopyOption.REPLACE_EXISTING);
-            SolicitudCreditoDocumento doc = documentoRepository.save(SolicitudCreditoDocumento.builder().solicitud(solicitud).tipo(tipo).url("/uploads/" + nombre).nombreArchivo(original).mimeType(mime).build());
-            return new SolicitudCreditoDocumentoResponse(doc.getIdDocumento(), doc.getTipo(), doc.getUrl(), doc.getNombreArchivo(), doc.getMimeType(), doc.getFechaCarga());
+            SolicitudCreditoDocumento doc = documentoRepository.save(SolicitudCreditoDocumento.builder().solicitud(solicitud).tipo(tipo).url("solicitudes-credito/" + id + "/" + nombre).nombreArchivo(original).mimeType(mime).build());
+            return documentoResponse(doc);
         } catch (IOException e) { throw new InvalidEntryException("No se pudo guardar el documento"); }
+    }
+
+    @Override @Transactional(readOnly = true)
+    public Resource descargarDocumento(Integer idSolicitud, Integer idDocumento) {
+        SolicitudCreditoDocumento documento = documentoRepository.findById(idDocumento)
+                .filter(d -> d.getSolicitud().getIdSolicitud().equals(idSolicitud))
+                .orElseThrow(() -> new NotFoundException("Documento no encontrado"));
+        if (documento.getUrl() == null || documento.getUrl().startsWith("/") || documento.getUrl().contains(".."))
+            throw new NotFoundException("Documento no encontrado");
+        Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path file = root.resolve(documento.getUrl()).normalize();
+        if (!file.startsWith(root)) throw new NotFoundException("Documento no encontrado");
+        Resource resource = new FileSystemResource(file);
+        if (!resource.exists()) throw new NotFoundException("Archivo no encontrado");
+        return resource;
     }
 
     @Override @Transactional
@@ -117,5 +134,11 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
     private boolean puedeAutorizar() { Authentication a = SecurityContextHolder.getContext().getAuthentication(); return a != null && a.getAuthorities().stream().anyMatch(x -> "CREDITOS_SOLICITUDES_AUTORIZAR".equals(x.getAuthority())); }
     private boolean puedeResolver(boolean aprobar) { Authentication a = SecurityContextHolder.getContext().getAuthentication(); String permiso = aprobar ? "CREDITOS_SOLICITUDES_AUTORIZAR" : "CREDITOS_SOLICITUDES_RECHAZAR"; return a != null && a.getAuthorities().stream().anyMatch(x -> permiso.equals(x.getAuthority())); }
     private Persona usuarioActual() { String u = SecurityContextHolder.getContext().getAuthentication().getName(); return personaRepository.findByUsuario(u).orElseThrow(() -> new NotFoundException("Usuario no encontrado")); }
-    private SolicitudCreditoResponse toResponse(SolicitudCredito s) { List<SolicitudCreditoDocumentoResponse> docs = documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(s.getIdSolicitud()).stream().map(d -> new SolicitudCreditoDocumentoResponse(d.getIdDocumento(), d.getTipo(), d.getUrl(), d.getNombreArchivo(), d.getMimeType(), d.getFechaCarga())).toList(); return new SolicitudCreditoResponse(s.getIdSolicitud(), s.getCliente().getIdCliente(), (s.getCliente().getNombre() + " " + s.getCliente().getApellidoPaterno()).trim(), s.getEstado(), s.getMontoSolicitado(), s.getMontoSugerido(), s.getMontoAprobado(), s.getEncuestaJson(), s.getObservaciones(), s.getSolicitante().getUsuario(), s.getResolutor() == null ? null : s.getResolutor().getUsuario(), s.getFechaSolicitud(), s.getFechaResolucion(), docs); }
+    private SolicitudCreditoDocumentoResponse documentoResponse(SolicitudCreditoDocumento d) {
+        return new SolicitudCreditoDocumentoResponse(d.getIdDocumento(), d.getTipo(),
+                "/api/v1/solicitudes-credito/" + d.getSolicitud().getIdSolicitud() + "/documentos/" + d.getIdDocumento() + "/descarga",
+                d.getNombreArchivo(), d.getMimeType(), d.getFechaCarga());
+    }
+
+    private SolicitudCreditoResponse toResponse(SolicitudCredito s) { List<SolicitudCreditoDocumentoResponse> docs = documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(s.getIdSolicitud()).stream().map(this::documentoResponse).toList(); return new SolicitudCreditoResponse(s.getIdSolicitud(), s.getCliente().getIdCliente(), (s.getCliente().getNombre() + " " + s.getCliente().getApellidoPaterno()).trim(), s.getEstado(), s.getMontoSolicitado(), s.getMontoSugerido(), s.getMontoAprobado(), s.getEncuestaJson(), s.getObservaciones(), s.getSolicitante().getUsuario(), s.getResolutor() == null ? null : s.getResolutor().getUsuario(), s.getFechaSolicitud(), s.getFechaResolucion(), docs); }
 }
