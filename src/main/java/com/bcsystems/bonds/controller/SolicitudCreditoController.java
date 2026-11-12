@@ -21,6 +21,10 @@ public class SolicitudCreditoController {
     public ResponseEntity<SolicitudCreditoResponse> obtener(@PathVariable Integer id) { return ResponseEntity.ok(service.obtener(id)); }
     @PostMapping(value="/{id}/documentos", consumes=MediaType.MULTIPART_FORM_DATA_VALUE) @PreAuthorize("hasAuthority('CREDITOS_DOCUMENTOS_CARGAR')")
     public ResponseEntity<SolicitudCreditoDocumentoResponse> documento(@PathVariable Integer id, @RequestParam String tipo, @RequestParam MultipartFile archivo) { return ResponseEntity.status(HttpStatus.CREATED).body(service.agregarDocumento(id, tipo, archivo)); }
+    @GetMapping("/{id}/documentos/{idDocumento}/descarga") @PreAuthorize("hasAuthority('CREDITOS_SOLICITUDES_VER')")
+    public ResponseEntity<org.springframework.core.io.Resource> descargarDocumento(@PathVariable Integer id, @PathVariable Integer idDocumento) {
+        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment").body(service.descargarDocumento(id, idDocumento));
+    }
     @PutMapping("/{id}/resolver") @PreAuthorize("hasAnyAuthority('CREDITOS_SOLICITUDES_AUTORIZAR','CREDITOS_SOLICITUDES_RECHAZAR')")
     public ResponseEntity<SolicitudCreditoResponse> resolver(@PathVariable Integer id, @RequestBody SolicitudCreditoResolverRequest r) { return ResponseEntity.ok(service.resolver(id, r)); }
 }

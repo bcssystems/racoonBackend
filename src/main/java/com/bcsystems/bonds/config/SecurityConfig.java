@@ -50,7 +50,7 @@ public class SecurityConfig {
                         .referrerPolicy(referrer -> referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh-token", "/api/v1/auth/logout", "/api/v1/auth/csrf").permitAll()
-                        .requestMatchers("/uploads/**", "/api/v1/catalogo/**").permitAll()
+                        .requestMatchers("/uploads/multimedia/**", "/api/v1/catalogo/**").permitAll()
                         .requestMatchers("/api/v1/kardex/**", "/api/v1/auditorias/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

@@ -11,13 +11,13 @@ import java.nio.file.Paths;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${app.upload.dir:./uploads/multimedia}")
-    private String uploadDir;
+    @Value("${app.upload.public-dir:./uploads/multimedia}")
+    private String publicUploadDir;
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        Path uploadPath = Paths.get(uploadDir).toAbsolutePath();
-        registry.addResourceHandler("/uploads/**")
+        Path uploadPath = Paths.get(publicUploadDir).toAbsolutePath().normalize();
+        registry.addResourceHandler("/uploads/multimedia/**")
                 .addResourceLocations("file:" + uploadPath.toString() + "/");
     }
 }

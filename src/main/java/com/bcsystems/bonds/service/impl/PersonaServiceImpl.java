@@ -53,6 +53,7 @@ public class PersonaServiceImpl implements PersonaService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<PersonaResponse> listar(Boolean activa, Pageable pageable) {
         if (activa != null) {
             return personaRepository.findByActiva(activa, pageable).map(this::toResponse);
@@ -61,6 +62,7 @@ public class PersonaServiceImpl implements PersonaService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public PersonaResponse obtenerPorId(Integer id) {
         return toResponse(personaRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Persona no encontrada con id: " + id)));
@@ -174,22 +176,22 @@ public class PersonaServiceImpl implements PersonaService {
     }
 
     private PersonaResponse toResponse(Persona p) {
-        List<String> rolPermisos = p.getRol().getPermisos().stream()
-                .map(Permiso::getClave)
-                .sorted()
-                .collect(Collectors.toList());
-        RolResponse rolResponse = new RolResponse(
-                p.getRol().getIdRol(),
-                p.getRol().getNombre(),
-                p.getRol().getDescripcion(),
-                p.getRol().getEsSistema(),
-                p.getRol().getActivo(),
-                rolPermisos
-        );
+        RolResponse rolResponse = null;
+        if (p.getRol() != null) {
+            List<String> rolPermisos = p.getRol().getPermisos().stream()
+                    .filter(permiso -> permiso != null && permiso.getClave() != null)
+                    .map(Permiso::getClave)
+                    .sorted()
+                    .collect(Collectors.toList());
+            rolResponse = new RolResponse(
+                    p.getRol().getIdRol(), p.getRol().getNombre(), p.getRol().getDescripcion(),
+                    p.getRol().getEsSistema(), p.getRol().getActivo(), rolPermisos);
+        }
 
         List<Integer> permisosAdicionales = new ArrayList<>();
         if (p.getPermisosAdicionales() != null) {
             permisosAdicionales = p.getPermisosAdicionales().stream()
+                    .filter(pa -> pa != null && pa.getPermiso() != null)
                     .map(pa -> pa.getPermiso().getIdPermiso())
                     .collect(Collectors.toList());
         }

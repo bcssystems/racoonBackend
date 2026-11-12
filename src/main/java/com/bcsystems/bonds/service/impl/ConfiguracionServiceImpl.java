@@ -33,7 +33,7 @@ public class ConfiguracionServiceImpl implements ConfiguracionService {
     private final ConfiguracionRepository configuracionRepository;
     private final AuditoriaService auditoriaService;
 
-    @Value("${app.upload.dir:./uploads/multimedia}")
+    @Value("${app.upload.public-dir:./uploads/multimedia}")
     private String uploadDir;
 
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
@@ -138,15 +138,15 @@ public class ConfiguracionServiceImpl implements ConfiguracionService {
     public ConfiguracionResponse actualizarLogo(MultipartFile archivo) {
         if (archivo == null || archivo.isEmpty()) throw new IllegalArgumentException("Debe proporcionar un logo");
         try {
-            Path dir = Paths.get(uploadDir);
+            Path dir = Paths.get(uploadDir, "configuracion");
             Files.createDirectories(dir);
             Configuracion config = configuracionRepository.findByClave("logoTicket").orElseGet(() -> crearPorDefecto("logoTicket"));
-            if (config.getValor() != null && config.getValor().startsWith("/uploads/")) {
-                Files.deleteIfExists(dir.resolve(config.getValor().substring("/uploads/".length())));
+            if (config.getValor() != null && config.getValor().startsWith("/uploads/multimedia/")) {
+                Files.deleteIfExists(Paths.get(uploadDir).resolve(config.getValor().substring("/uploads/multimedia/".length())).normalize());
             }
             String nombre = UUID.randomUUID() + "-ticket" + extension(archivo.getOriginalFilename());
             Files.copy(archivo.getInputStream(), dir.resolve(nombre), StandardCopyOption.REPLACE_EXISTING);
-            config.setValor("/uploads/" + nombre);
+            config.setValor("/uploads/multimedia/configuracion/" + nombre);
             config.setActualizadaEn(LocalDateTime.now());
             return toResponse(configuracionRepository.save(config));
         } catch (java.io.IOException e) {

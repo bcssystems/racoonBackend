@@ -42,7 +42,7 @@ public class ClienteServiceImpl implements ClienteService {
     private final ClienteIneRepository clienteIneRepository;
     private final AuditoriaService auditoriaService;
 
-    @Value("${app.upload.dir:./uploads/multimedia}")
+    @Value("${app.upload.private-dir:./uploads/privados}")
     private String uploadDir;
 
     @Override
@@ -208,26 +208,25 @@ public class ClienteServiceImpl implements ClienteService {
             throw new InvalidEntryException("Debe proporcionar al menos una foto del INE");
         }
         try {
-            Path uploadPath = Paths.get(uploadDir);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-            }
+            Path privateRoot = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Path uploadPath = privateRoot.resolve(Paths.get("clientes", "ine")).normalize();
+            Files.createDirectories(uploadPath);
 
             ClienteIne ine = clienteIneRepository.findByClienteIdCliente(id)
                     .orElse(ClienteIne.builder().cliente(cliente).subidoEn(LocalDateTime.now()).build());
 
             if (frontal != null && !frontal.isEmpty()) {
-                borrarArchivo(ine.getUrlFotoFrontal(), uploadPath);
+                borrarArchivo(ine.getUrlFotoFrontal(), privateRoot);
                 String nombre = UUID.randomUUID() + ".ine.f.jpg";
                 Files.copy(frontal.getInputStream(), uploadPath.resolve(nombre), StandardCopyOption.REPLACE_EXISTING);
-                ine.setUrlFotoFrontal("/uploads/" + nombre);
+                ine.setUrlFotoFrontal("clientes/ine/" + nombre);
                 ine.setNombreArchivoFrontal(frontal.getOriginalFilename());
             }
             if (trasera != null && !trasera.isEmpty()) {
-                borrarArchivo(ine.getUrlFotoTrasera(), uploadPath);
+                borrarArchivo(ine.getUrlFotoTrasera(), privateRoot);
                 String nombre = UUID.randomUUID() + ".ine.t.jpg";
                 Files.copy(trasera.getInputStream(), uploadPath.resolve(nombre), StandardCopyOption.REPLACE_EXISTING);
-                ine.setUrlFotoTrasera("/uploads/" + nombre);
+                ine.setUrlFotoTrasera("clientes/ine/" + nombre);
                 ine.setNombreArchivoTrasera(trasera.getOriginalFilename());
             }
             ine.setSubidoEn(LocalDateTime.now());
@@ -253,15 +252,19 @@ public class ClienteServiceImpl implements ClienteService {
         ClienteIne ine = clienteIneRepository.findByClienteIdCliente(id)
                 .orElseThrow(() -> new NotFoundException("INE no encontrada"));
         String url = "frontal".equalsIgnoreCase(lado) ? ine.getUrlFotoFrontal() : ine.getUrlFotoTrasera();
-        if (url == null || !url.startsWith("/uploads/")) throw new NotFoundException("Foto del INE no encontrada");
-        Resource recurso = new FileSystemResource(Paths.get(uploadDir, url.substring("/uploads/".length())));
+        if (url == null || url.isBlank() || url.startsWith("/") || url.contains("..")) throw new NotFoundException("Foto del INE no encontrada");
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path archivo = base.resolve(url).normalize();
+        if (!archivo.startsWith(base)) throw new NotFoundException("Foto del INE no encontrada");
+        Resource recurso = new FileSystemResource(archivo);
         if (!recurso.exists()) throw new NotFoundException("Archivo del INE no encontrado");
         return recurso;
     }
 
     private void borrarArchivo(String url, Path dir) throws IOException {
-        if (url != null && url.startsWith("/uploads/")) {
-            Files.deleteIfExists(dir.resolve(url.substring("/uploads/".length())));
+        if (url != null && !url.startsWith("/") && !url.contains("..")) {
+            Path archivo = dir.resolve(url).normalize();
+            if (archivo.startsWith(dir)) Files.deleteIfExists(archivo);
         }
     }
 
@@ -282,7 +285,8 @@ public class ClienteServiceImpl implements ClienteService {
     private ClienteIneResponse toIneResponse(ClienteIne ine) {
         return new ClienteIneResponse(
                 ine.getIdClienteIne(), ine.getCliente().getIdCliente(),
-                ine.getUrlFotoFrontal(), ine.getUrlFotoTrasera(),
+                ine.getUrlFotoFrontal() == null ? null : "/api/v1/clientes/" + ine.getCliente().getIdCliente() + "/ine/frontal/descarga",
+                ine.getUrlFotoTrasera() == null ? null : "/api/v1/clientes/" + ine.getCliente().getIdCliente() + "/ine/trasera/descarga",
                 ine.getNombreArchivoFrontal(), ine.getNombreArchivoTrasera(),
                 ine.getSubidoEn());
     }

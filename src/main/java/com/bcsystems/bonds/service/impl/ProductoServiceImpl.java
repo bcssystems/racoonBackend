@@ -45,7 +45,7 @@ public class ProductoServiceImpl implements ProductoService {
     private final AuditoriaService auditoriaService;
     private final WhatsAppService whatsAppService;
     private final ProductoMultimediaRepository multimediaRepository;
-    @Value("${app.upload.dir:./uploads/multimedia}")
+    @Value("${app.upload.public-dir:./uploads/multimedia}")
     private String uploadDir;
 
     public ProductoServiceImpl(ProductoRepository productoRepository,
@@ -133,7 +133,7 @@ public class ProductoServiceImpl implements ProductoService {
                 && (contentType.equals("application/pdf") || contentType.equals("application/octet-stream"))) tipo = "DOCUMENTO";
         else throw new InvalidEntryException("El archivo debe ser una imagen, video compatible o PDF válido");
         String nombreGuardado = UUID.randomUUID() + extension;
-        Path directorio = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path directorio = Paths.get(uploadDir, "productos").toAbsolutePath().normalize();
         Path destino = directorio.resolve(nombreGuardado).normalize();
         if (!destino.startsWith(directorio)) throw new InvalidEntryException("Nombre de archivo no válido");
         try {
@@ -145,7 +145,7 @@ public class ProductoServiceImpl implements ProductoService {
 
         boolean esPrimero = multimediaRepository.countByProductoIdProducto(idProducto) == 0 && tipo.equals("IMAGEN");
         ProductoMultimedia media = multimediaRepository.save(ProductoMultimedia.builder()
-                .producto(producto).tipo(tipo).url("/uploads/" + nombreGuardado)
+                .producto(producto).tipo(tipo).url("/uploads/multimedia/productos/" + nombreGuardado)
                 .nombreArchivo(original).orden(multimediaRepository.maxOrden(idProducto) + 1)
                 .esPrincipal(esPrimero).build());
         auditoriaService.registrar("PRODUCTO", idProducto, AccionAuditoria.ACTUALIZACION.name(), obtenerUsuarioActual(),
@@ -221,9 +221,9 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private void eliminarArchivo(String url) {
-        if (url == null || !url.startsWith("/uploads/")) return;
+        if (url == null || !url.startsWith("/uploads/multimedia/")) return;
         Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
-        Path archivo = dir.resolve(url.substring("/uploads/".length())).normalize();
+        Path archivo = dir.resolve(url.substring("/uploads/multimedia/".length())).normalize();
         if (!archivo.startsWith(dir)) return;
         try { Files.deleteIfExists(archivo); } catch (IOException ignored) { }
     }
