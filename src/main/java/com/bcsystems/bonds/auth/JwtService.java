@@ -55,8 +55,15 @@ public class JwtService {
     public String tokenType(String token) { return extractClaim(token, c -> c.get("token_type", String.class)); }
     public String sessionFamily(String token) { return extractClaim(token, c -> c.get("session_family", String.class)); }
     public boolean belongsToRacoon(String token) {
-        return ISSUER.equals(extractClaim(token, Claims::getIssuer))
-                && AUDIENCE.equals(extractClaim(token, Claims::getAudience));
+        // extractAllClaims valida firma, issuer y audience mediante el parser.
+        // La audiencia JWT puede serializarse como string o como arreglo; no
+        // debemos compararla manualmente como un único String.
+        try {
+            extractAllClaims(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException ex) {
+            return false;
+        }
     }
     public boolean isTokenValid(String token, Persona persona) { return extractUsername(token).equalsIgnoreCase(persona.getUsuario()) && !isTokenExpired(token); }
     public boolean isTokenExpired(String token) { return extractClaim(token, Claims::getExpiration).before(new Date()); }
