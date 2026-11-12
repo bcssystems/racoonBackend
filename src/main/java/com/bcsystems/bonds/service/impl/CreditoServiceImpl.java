@@ -343,7 +343,9 @@ public class CreditoServiceImpl implements CreditoService {
     @Override
     public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, String estado, String cliente) {
         Persona actual = obtenerPersonaActual();
-        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS") || tieneAutoridad("CREDITOS_ASIGNAR");
+        // Ver toda la cartera debe ser un permiso explícito. Poder asignar
+        // créditos no debe permitir consultar la cartera de todos los cobradores.
+        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS");
         Integer cobradorFiltro = verTodas ? idCobrador : actual.getIdPersona();
         LocalDate inicio = desde != null ? desde : LocalDate.now();
         LocalDate fin = hasta != null ? hasta : inicio.plusDays(30);
@@ -357,7 +359,7 @@ public class CreditoServiceImpl implements CreditoService {
         Credito credito = creditoRepository.findById(request.idCredito())
                 .orElseThrow(() -> new NotFoundException("Credito no encontrado"));
         Persona actual = obtenerPersonaActual();
-        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS") || tieneAutoridad("CREDITOS_ASIGNAR");
+        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS");
         if (!verTodas && (credito.getCobrador() == null || !credito.getCobrador().getIdPersona().equals(actual.getIdPersona()))) {
             throw new InvalidEntryException("El credito no está asignado a este usuario");
         }
