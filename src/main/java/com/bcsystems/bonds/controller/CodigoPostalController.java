@@ -15,7 +15,6 @@ import java.util.Map;
 public class CodigoPostalController {
     private final CodigoPostalService codigoPostalService;
     @Value("${google.maps.browser-api-key:}") private String browserApiKey;
-    @Value("${google.maps.map-id:DEMO_MAP_ID}") private String googleMapsMapId;
 
     @GetMapping("/codigos-postales/{cp}")
     @PreAuthorize("hasAnyAuthority('CLIENTES_VER','CLIENTES_CREAR','CLIENTES_EDITAR','VENTAS_VER','VENTAS_CREAR')")
@@ -26,7 +25,6 @@ public class CodigoPostalController {
     @GetMapping("/mapa-config")
     @PreAuthorize("hasAnyAuthority('CLIENTES_VER','CLIENTES_CREAR','CLIENTES_EDITAR','COBRANZA_VER')")
     public ResponseEntity<Map<String, String>> mapaConfig() {
-        return ResponseEntity.ok(Map.of("googleMapsApiKey", browserApiKey == null ? "" : browserApiKey,
-                "googleMapsMapId", googleMapsMapId == null ? "DEMO_MAP_ID" : googleMapsMapId));
+        return ResponseEntity.ok(Map.of("googleMapsApiKey", browserApiKey == null ? "" : browserApiKey));
     }
 }
