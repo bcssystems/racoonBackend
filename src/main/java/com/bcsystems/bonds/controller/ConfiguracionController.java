@@ -28,6 +28,12 @@ public class ConfiguracionController {
         return ResponseEntity.ok(configuracionService.listar());
     }
 
+    @GetMapping("/logo")
+    @PreAuthorize("hasAnyAuthority('CONFIGURACION_VER','CORTES_VER','VENTAS_VER')")
+    public ResponseEntity<ConfiguracionResponse> logo() {
+        return ResponseEntity.ok(configuracionService.obtener("logoTicket"));
+    }
+
     @GetMapping("/{clave}")
     @PreAuthorize("hasAuthority('CONFIGURACION_VER')")
     public ResponseEntity<ConfiguracionResponse> obtener(@PathVariable String clave) {
