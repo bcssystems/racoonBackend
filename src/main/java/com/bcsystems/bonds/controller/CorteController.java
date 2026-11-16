@@ -173,7 +173,7 @@ public class CorteController {
     }
 
     @PutMapping("/{id}/detalle-pagos")
-    @PreAuthorize("hasAuthority('CORTES_EDITAR')")
+    @PreAuthorize("hasAnyAuthority('CORTES_EDITAR', 'CAJAS_CORTE')")
     public ResponseEntity<CorteResponse> actualizarDetallePagos(
             @PathVariable Integer id,
             @RequestBody CorteDetallePagoUpdateRequest request) {
@@ -237,6 +237,8 @@ public class CorteController {
                         .toList()
                 : java.util.List.of();
 
+        double saldoEsperado = calcularSaldoEsperado(c, totalGastos, totalAnticipos);
+
         return new CorteResponse(
                 c.getIdCorte(), c.getCaja().getIdCaja(), c.getCaja().getNombre(),
                 c.getCaja().getSucursal().getIdSucursal(), c.getCaja().getSucursal().getNombre(),
@@ -245,7 +247,7 @@ public class CorteController {
                 c.getTotalIngresos(), c.getTotalEgresos(), totalGastos,
                  c.getTotalAbonos() != null ? c.getTotalAbonos() : 0.0,
                  totalAnticipos,
-                c.getSaldoFinalContado(), null,
+                 c.getSaldoFinalContado(), saldoEsperado,
                 c.getFechaApertura(), c.getFechaCierre(),
                 c.getUsuario().getUsuario(), detallePagos,
                 gastosPeriodo.stream().map(this::toGastoResponse).toList(),
@@ -255,6 +257,20 @@ public class CorteController {
                  anticipos,
                 c.getRecibidoPor() == null ? null : c.getRecibidoPor().getNombre() + " " + c.getRecibidoPor().getApellido(),
                 c.getFechaRecepcion());
+    }
+
+    private double calcularSaldoEsperado(CorteCaja corte, double totalGastos, double totalAnticipos) {
+        return valor(corte.getSaldoInicial())
+                + valor(corte.getTotalVentasContado())
+                + totalAnticipos
+                + valor(corte.getTotalIngresos())
+                - valor(corte.getTotalEgresos())
+                - totalGastos
+                + valor(corte.getTotalAbonos());
+    }
+
+    private double valor(Double monto) {
+        return monto == null ? 0.0 : monto;
     }
 
     private List<AnticipoCorteDto> obtenerAnticipos(Integer idCaja, LocalDateTime inicio, LocalDateTime fin) {

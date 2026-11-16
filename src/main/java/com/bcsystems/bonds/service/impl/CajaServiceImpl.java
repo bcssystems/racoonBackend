@@ -447,9 +447,12 @@ public class CajaServiceImpl implements CajaService {
         abonosEnRango = abonosEnRango.stream().filter(a -> !Boolean.TRUE.equals(a.getCancelado())).toList();
         double totalAbonos = abonosEnRango.stream().mapToDouble(Abono::getMonto).sum();
 
+        List<AnticipoCorteDto> anticipos = construirAnticipos(pagosEnRango);
+        double totalAnticipos = anticipos.stream().mapToDouble(a -> a.monto() == null ? 0 : a.monto()).sum();
+
         double saldoInicial = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos
-                - totalContado - totalAbonos;
-        double saldoEsperado = saldoInicial + totalVentas + totalIngresos - totalEgresos
+                - totalContado - totalAnticipos - totalAbonos;
+        double saldoEsperado = saldoInicial + totalContado + totalAnticipos + totalIngresos - totalEgresos
                 - totalGastos + totalAbonos;
 
         pagosEnRango = pagosEnRango.stream().filter(vp -> !esPagoCredito(vp)).toList();
@@ -485,9 +488,6 @@ public class CajaServiceImpl implements CajaService {
 
         double totalReal = 0.0;
         double diferencia = 0.0;
-        List<AnticipoCorteDto> anticipos = construirAnticipos(pagosEnRango);
-        double totalAnticipos = anticipos.stream().mapToDouble(a -> a.monto() == null ? 0 : a.monto()).sum();
-
         List<AbonoCorteDto> abonosList = abonosEnRango.stream()
                 .map(a -> new AbonoCorteDto(
                         a.getIdAbono(),
@@ -653,6 +653,13 @@ public class CajaServiceImpl implements CajaService {
         if (totalGastos == null) {
             totalGastos = gastosPeriodo.stream().mapToDouble(Gasto::getMonto).sum();
         }
+        double saldoEsperado = (corte.getSaldoInicial() == null ? 0 : corte.getSaldoInicial())
+                + (corte.getTotalVentasContado() == null ? 0 : corte.getTotalVentasContado())
+                + totalAnticipos
+                + (corte.getTotalIngresos() == null ? 0 : corte.getTotalIngresos())
+                - (corte.getTotalEgresos() == null ? 0 : corte.getTotalEgresos())
+                - totalGastos
+                + (corte.getTotalAbonos() == null ? 0 : corte.getTotalAbonos());
 
         return new CorteResponse(
                 corte.getIdCorte(), corte.getCaja().getIdCaja(), corte.getCaja().getNombre(),
@@ -662,7 +669,7 @@ public class CajaServiceImpl implements CajaService {
                 corte.getTotalIngresos(), corte.getTotalEgresos(), totalGastos,
                  corte.getTotalAbonos() != null ? corte.getTotalAbonos() : 0.0,
                  totalAnticipos,
-                corte.getSaldoFinalContado(), null,
+                 corte.getSaldoFinalContado(), saldoEsperado,
                 corte.getFechaApertura(), corte.getFechaCierre(),
                 corte.getUsuario().getUsuario(), detallePagos,
                 gastosPeriodo.stream().map(this::toGastoResponse).toList(),
