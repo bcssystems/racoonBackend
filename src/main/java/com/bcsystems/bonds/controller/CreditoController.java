@@ -73,7 +73,7 @@ public class CreditoController {
 
     @GetMapping("/cobranza/agenda")
     @PreAuthorize("hasAuthority('COBRANZA_VER')")
-    public ResponseEntity<List<CobranzaResponse>> agendaCobranza(
+    public ResponseEntity<Page<CobranzaResponse>> agendaCobranza(
             @RequestParam(required = false) LocalDate desde,
             @RequestParam(required = false) LocalDate hasta,
             @RequestParam(required = false) Integer idCobrador,
