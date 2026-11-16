@@ -26,7 +26,7 @@ public interface CreditoService {
 
     void asignarCobrador(Integer idCredito, Integer idPersona);
 
-    Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente, int page, int size);
+    Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, Boolean incluirAtrasados, String estado, String cliente, int page, int size);
 
     ProgresoCobranzaResponse progresoCobranza(LocalDate fecha, Boolean miCartera);
 

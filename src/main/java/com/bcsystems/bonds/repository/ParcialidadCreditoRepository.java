@@ -15,21 +15,22 @@ public interface ParcialidadCreditoRepository extends JpaRepository<ParcialidadC
 
     @Query(value = "select p from ParcialidadCredito p join fetch p.credito c join fetch c.cliente cl left join fetch c.cobrador " +
             "where p.fechaVencimiento < :hasta " +
-            "and (p.fechaVencimiento >= :desde or (p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
+            "and (p.fechaVencimiento >= :desde or (:incluirAtrasados = true and p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
             "and (:idCobrador is null or c.cobrador.idPersona = :idCobrador) " +
             "and (:estado is null or p.estado = :estado) " +
             "and (:cliente is null or lower(concat(cl.nombre, ' ', coalesce(cl.apellidoPaterno, ''))) like lower(concat('%', :cliente, '%'))) " +
             "order by p.fechaVencimiento asc, p.numero asc",
             countQuery = "select count(p) from ParcialidadCredito p join p.credito c join c.cliente cl " +
                     "where p.fechaVencimiento < :hasta " +
-                    "and (p.fechaVencimiento >= :desde or (p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
+                     "and (p.fechaVencimiento >= :desde or (:incluirAtrasados = true and p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
                     "and (:idCobrador is null or c.cobrador.idPersona = :idCobrador) " +
                     "and (:estado is null or p.estado = :estado) " +
                     "and (:cliente is null or lower(concat(cl.nombre, ' ', coalesce(cl.apellidoPaterno, ''))) like lower(concat('%', :cliente, '%')))")
     Page<ParcialidadCredito> buscarAgenda(@Param("idCobrador") Integer idCobrador,
-                                          @Param("desde") LocalDateTime desde,
-                                          @Param("hasta") LocalDateTime hasta,
-                                          @Param("estado") String estado,
+                                           @Param("desde") LocalDateTime desde,
+                                           @Param("hasta") LocalDateTime hasta,
+                                           @Param("incluirAtrasados") boolean incluirAtrasados,
+                                           @Param("estado") String estado,
                                           @Param("cliente") String cliente,
                                           Pageable pageable);
 

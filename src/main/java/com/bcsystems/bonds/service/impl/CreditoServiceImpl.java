@@ -346,7 +346,7 @@ public class CreditoServiceImpl implements CreditoService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente, int page, int size) {
+    public Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, Boolean incluirAtrasados, String estado, String cliente, int page, int size) {
         Persona actual = obtenerPersonaActual();
         // Ver toda la cartera debe ser un permiso explícito. Poder asignar
         // créditos no debe permitir consultar la cartera de todos los cobradores.
@@ -354,7 +354,7 @@ public class CreditoServiceImpl implements CreditoService {
         Integer cobradorFiltro = !verTodas || Boolean.TRUE.equals(miCartera) ? actual.getIdPersona() : idCobrador;
         LocalDate inicio = desde != null ? desde : LocalDate.now();
         LocalDate fin = hasta != null ? hasta : inicio.plusDays(30);
-        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado, cliente,
+        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), incluirAtrasados == null || incluirAtrasados, estado, cliente,
                         PageRequest.of(page, size))
                 .map(this::toCobranzaResponse);
     }
@@ -371,7 +371,7 @@ public class CreditoServiceImpl implements CreditoService {
         LocalDateTime hasta = dia.plusDays(1).atStartOfDay();
 
         List<ParcialidadCredito> parcialidades = parcialidadCreditoRepository
-                .buscarAgenda(soloMio ? idPropio : null, desde, hasta, null, null, PageRequest.of(0, 10000))
+                .buscarAgenda(soloMio ? idPropio : null, desde, hasta, false, null, null, PageRequest.of(0, 10000))
                 .getContent();
         List<Abono> abonos = abonoRepository.findAbonosVigentesEntre(desde, hasta);
         Map<Integer, double[]> acumulados = new LinkedHashMap<>();

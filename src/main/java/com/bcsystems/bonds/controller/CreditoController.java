@@ -76,14 +76,15 @@ public class CreditoController {
     public ResponseEntity<Page<CobranzaResponse>> agendaCobranza(
             @RequestParam(required = false) LocalDate desde,
             @RequestParam(required = false) LocalDate hasta,
-            @RequestParam(required = false) Integer idCobrador,
-            @RequestParam(required = false) Boolean miCartera,
-            @RequestParam(required = false) String estado,
+             @RequestParam(required = false) Integer idCobrador,
+             @RequestParam(required = false) Boolean miCartera,
+             @RequestParam(required = false) Boolean incluirAtrasados,
+             @RequestParam(required = false) String estado,
              @RequestParam(required = false) String cliente,
              @RequestParam(defaultValue = "0") int page,
              @RequestParam(defaultValue = "10") int size) {
         int pageSize = Math.max(1, Math.min(size, 100));
-        return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, miCartera, estado, cliente, Math.max(0, page), pageSize));
+         return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, miCartera, incluirAtrasados, estado, cliente, Math.max(0, page), pageSize));
     }
 
     @GetMapping("/cobranza/progreso")
