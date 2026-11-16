@@ -341,12 +341,12 @@ public class CreditoServiceImpl implements CreditoService {
     }
 
     @Override
-    public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, String estado, String cliente) {
+    public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente) {
         Persona actual = obtenerPersonaActual();
         // Ver toda la cartera debe ser un permiso explícito. Poder asignar
         // créditos no debe permitir consultar la cartera de todos los cobradores.
         boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS");
-        Integer cobradorFiltro = verTodas ? idCobrador : actual.getIdPersona();
+        Integer cobradorFiltro = !verTodas || Boolean.TRUE.equals(miCartera) ? actual.getIdPersona() : idCobrador;
         LocalDate inicio = desde != null ? desde : LocalDate.now();
         LocalDate fin = hasta != null ? hasta : inicio.plusDays(30);
         return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado, cliente)

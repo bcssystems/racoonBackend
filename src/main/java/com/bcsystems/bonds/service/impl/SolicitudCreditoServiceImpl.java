@@ -7,6 +7,8 @@ import com.bcsystems.bonds.exception.NotFoundException;
 import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.SolicitudCreditoService;
 import com.bcsystems.bonds.service.AuditoriaService;
+import com.bcsystems.bonds.event.SolicitudCreditoCreadaEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
@@ -31,6 +33,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
     private final ClienteRepository clienteRepository;
     private final PersonaRepository personaRepository;
     private final AuditoriaService auditoriaService;
+    private final ApplicationEventPublisher eventPublisher;
     @Value("${app.upload.private-dir:./uploads/privados}") private String uploadDir;
 
     @Override @Transactional
@@ -51,6 +54,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
                 .observaciones(request.observaciones()).build();
         solicitud = solicitudRepository.save(solicitud);
         auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "CREACION", solicitante.getUsuario(), "Solicitud de crédito creada");
+        eventPublisher.publishEvent(new SolicitudCreditoCreadaEvent(solicitud.getIdSolicitud()));
         return toResponse(solicitud);
     }
 

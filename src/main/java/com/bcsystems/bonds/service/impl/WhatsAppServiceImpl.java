@@ -4,6 +4,7 @@ import com.bcsystems.bonds.domain.*;
 import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.WhatsAppService;
 import com.bcsystems.bonds.event.CreditoAsignadoEvent;
+import com.bcsystems.bonds.event.SolicitudCreditoCreadaEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -29,6 +30,7 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     private final ParcialidadCreditoRepository parcialidadRepository;
     private final VentaDetalleRepository detalleRepository;
     private final VentaPagoRepository pagoRepository;
+    private final SolicitudCreditoRepository solicitudRepository;
 
     @Value("${wasender.enabled:false}") private boolean enabled;
     @Value("${wasender.api-url:https://wasenderapi.com/api}") private String apiUrl;
@@ -75,16 +77,53 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     }
 
     @Override
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async("messagingExecutor")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notificarSolicitudCredito(SolicitudCreditoCreadaEvent event) {
+        SolicitudCredito solicitud = solicitudRepository.findById(event.idSolicitud()).orElse(null);
+        if (solicitud == null) return;
+        String mensaje = "📋 NUEVA SOLICITUD DE CRÉDITO\n\n" +
+                "Solicitud: #" + solicitud.getIdSolicitud() + "\n" +
+                "Cliente: " + nombre(solicitud.getCliente()) + "\n" +
+                "Monto solicitado: $" + dinero(solicitud.getMontoSolicitado()) + "\n" +
+                "Monto sugerido: $" + dinero(solicitud.getMontoSugerido()) + "\n" +
+                "Solicitante: " + nombre(solicitud.getSolicitante()) + "\n" +
+                "Fecha: " + solicitud.getFechaSolicitud().format(DATE) + "\n\n" +
+                "⚠️ Requiere revisión en Autorizaciones.";
+        for (Persona admin : personaRepository.findByRolNombreIgnoreCaseAndActivaTrue("ADMINISTRADOR")) {
+            enviar(admin.getTelefono(), "SOLICITUD_CREDITO", "solicitud:" + solicitud.getIdSolicitud() + ":admin:" + admin.getIdPersona(), mensaje);
+        }
+    }
+
+    @Override
     @Scheduled(cron = "0 0 8 * * *", zone = "${wasender.time-zone:America/Mexico_City}")
     @Async("messagingExecutor")
-    @Transactional(readOnly = true)
+    @Transactional
     public void enviarItinerarios() {
         LocalDate hoy = LocalDate.now(ZoneId.of(timeZone));
         LocalDateTime limite = hoy.plusDays(1).atStartOfDay();
+        int orden = 0;
+        LocalDateTime base = hoy.atTime(8, 0);
         for (Persona cobrador : creditoRepository.findCobradoresActivos()) {
             List<ParcialidadCredito> items = parcialidadRepository.findPendientesParaItinerario(cobrador.getIdPersona(), limite);
-            if (!items.isEmpty()) enviar(cobrador.getTelefono(), "ITINERARIO", "cobrador:" + cobrador.getIdPersona(), mensajeItinerario(cobrador, items, hoy));
+            if (!items.isEmpty()) {
+                String referencia = "cobrador:" + cobrador.getIdPersona() + ":" + hoy;
+                if (!mensajeRepository.existsByTipoAndReferenciaAndEstadoIn("ITINERARIO", referencia, List.of("PENDIENTE", "ENVIADO"))) {
+                    programar(cobrador.getTelefono(), "ITINERARIO", referencia,
+                            mensajeItinerario(cobrador, items, hoy), base.plusMinutes(orden * 2L));
+                    orden++;
+                }
+            }
         }
+    }
+
+    @Scheduled(fixedDelay = 10000)
+    @Transactional
+    public void procesarColaProgramada() {
+        if (!enabled || apiToken == null || apiToken.isBlank()) return;
+        mensajeRepository.findFirstByEstadoAndFechaProgramadaLessThanEqualOrderByFechaProgramadaAsc("PENDIENTE", LocalDateTime.now())
+                .ifPresent(this::enviarRegistro);
     }
 
     private String mensajeCredito(Credito c, Persona cobrador) {
@@ -124,6 +163,20 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     private void enviar(String telefono, String tipo, String referencia, String texto) {
         MensajeWhatsApp m = mensajeRepository.save(MensajeWhatsApp.builder().tipo(tipo).referencia(referencia)
                 .destinatario(normalizar(telefono)).mensaje(texto).estado("PENDIENTE").intentos(0).fechaCreacion(LocalDateTime.now()).build());
+        enviarRegistro(m);
+    }
+
+    private void programar(String telefono, String tipo, String referencia, String texto, LocalDateTime fechaProgramada) {
+        MensajeWhatsApp m = mensajeRepository.save(MensajeWhatsApp.builder().tipo(tipo).referencia(referencia)
+                .destinatario(normalizar(telefono)).mensaje(texto).estado("PENDIENTE").intentos(0)
+                .fechaCreacion(LocalDateTime.now()).fechaProgramada(fechaProgramada).build());
+        if (!enabled || apiToken == null || apiToken.isBlank()) {
+            m.setEstado("DESHABILITADO");
+            mensajeRepository.save(m);
+        }
+    }
+
+    private void enviarRegistro(MensajeWhatsApp m) {
         if (!enabled || apiToken == null || apiToken.isBlank()) { m.setEstado("DESHABILITADO"); mensajeRepository.save(m); return; }
         if (m.getDestinatario() == null) { m.setEstado("ERROR"); m.setDetalleError("Teléfono no válido"); mensajeRepository.save(m); return; }
         RestClientException last = null;

@@ -23,4 +23,5 @@ public class MensajeWhatsApp {
     @Builder.Default @Column(nullable = false) private Integer intentos = 0;
     private LocalDateTime fechaCreacion;
     private LocalDateTime fechaEnvio;
+    private LocalDateTime fechaProgramada;
 }
