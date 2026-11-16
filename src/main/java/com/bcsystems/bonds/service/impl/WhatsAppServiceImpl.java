@@ -104,7 +104,9 @@ public class WhatsAppServiceImpl implements WhatsAppService {
         LocalDate hoy = LocalDate.now(ZoneId.of(timeZone));
         LocalDateTime limite = hoy.plusDays(1).atStartOfDay();
         int orden = 0;
-        LocalDateTime base = hoy.atTime(8, 0);
+        // Se usa la hora real de ejecución para que el intervalo funcione aunque
+        // el servidor tenga una zona horaria distinta a la configurada para el cron.
+        LocalDateTime base = LocalDateTime.now();
         for (Persona cobrador : creditoRepository.findCobradoresActivos()) {
             List<ParcialidadCredito> items = parcialidadRepository.findPendientesParaItinerario(cobrador.getIdPersona(), limite);
             if (!items.isEmpty()) {
