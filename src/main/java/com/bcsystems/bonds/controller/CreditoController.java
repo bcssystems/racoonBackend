@@ -78,9 +78,12 @@ public class CreditoController {
             @RequestParam(required = false) LocalDate hasta,
             @RequestParam(required = false) Integer idCobrador,
             @RequestParam(required = false) Boolean miCartera,
-             @RequestParam(required = false) String estado,
-             @RequestParam(required = false) String cliente) {
-        return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, miCartera, estado, cliente));
+            @RequestParam(required = false) String estado,
+             @RequestParam(required = false) String cliente,
+             @RequestParam(defaultValue = "0") int page,
+             @RequestParam(defaultValue = "10") int size) {
+        int pageSize = Math.max(1, Math.min(size, 100));
+        return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, miCartera, estado, cliente, Math.max(0, page), pageSize));
     }
 
     @PostMapping("/cobranza/abonos")

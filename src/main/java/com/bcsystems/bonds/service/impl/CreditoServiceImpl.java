@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -341,7 +343,7 @@ public class CreditoServiceImpl implements CreditoService {
     }
 
     @Override
-    public List<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente) {
+    public Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente, int page, int size) {
         Persona actual = obtenerPersonaActual();
         // Ver toda la cartera debe ser un permiso explícito. Poder asignar
         // créditos no debe permitir consultar la cartera de todos los cobradores.
@@ -349,8 +351,9 @@ public class CreditoServiceImpl implements CreditoService {
         Integer cobradorFiltro = !verTodas || Boolean.TRUE.equals(miCartera) ? actual.getIdPersona() : idCobrador;
         LocalDate inicio = desde != null ? desde : LocalDate.now();
         LocalDate fin = hasta != null ? hasta : inicio.plusDays(30);
-        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado, cliente)
-                .stream().map(this::toCobranzaResponse).toList();
+        return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado, cliente,
+                        PageRequest.of(page, size))
+                .map(this::toCobranzaResponse);
     }
 
     @Override
