@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -213,9 +214,20 @@ public class CajaServiceImpl implements CajaService {
     @Override
     @Transactional(readOnly = true)
     public List<MovimientoCajaResponse> movimientos(Integer id) {
-        return movimientoCajaRepository.findByCajaIdCajaOrderByFechaDesc(id).stream()
+        List<MovimientoCajaResponse> movimientos = new ArrayList<>(movimientoCajaRepository.findByCajaIdCajaOrderByFechaDesc(id).stream()
                 .map(this::toMovimientoResponse)
-                .toList();
+                .toList());
+        gastoRepository.findByCajaIdCajaOrderByFechaCreacionDesc(id).stream()
+                .filter(gasto -> gasto.getEstado() == EstadoGasto.AUTORIZADO)
+                .map(this::toGastoMovimientoResponse)
+                .forEach(movimientos::add);
+        movimientos.sort((a, b) -> {
+            if (a.fecha() == null && b.fecha() == null) return 0;
+            if (a.fecha() == null) return 1;
+            if (b.fecha() == null) return -1;
+            return b.fecha().compareTo(a.fecha());
+        });
+        return movimientos;
     }
 
     @Override
@@ -249,8 +261,19 @@ public class CajaServiceImpl implements CajaService {
                              credito == null || credito.getEstado() == null ? null : credito.getEstado().name(),
                              Boolean.TRUE.equals(m.getCancelado()),
                              m.getFechaSolicitudCancelacion() == null ? null : "SOLICITADA",
-                             m.getMotivoCancelacion(),
-                             m.getVenta() == null ? null : m.getVenta().getIdVenta());
+                              m.getMotivoCancelacion(),
+                              m.getVenta() == null ? null : m.getVenta().getIdVenta(),
+                              null);
+    }
+
+    private MovimientoCajaResponse toGastoMovimientoResponse(Gasto gasto) {
+        return new MovimientoCajaResponse(
+                null, gasto.getCaja().getIdCaja(), gasto.getCaja().getNombre(),
+                "GASTO", gasto.getMonto(), gasto.getDescripcion(),
+                gasto.getUsuario() == null ? null : gasto.getUsuario().getUsuario(),
+                gasto.getFechaAutorizacion() != null ? gasto.getFechaAutorizacion() : gasto.getFechaCreacion(),
+                null, null, null, null, null, null, null, null, null, null, null,
+                false, null, null, null, gasto.getIdGasto());
     }
 
     @Override
