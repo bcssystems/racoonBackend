@@ -13,7 +13,7 @@ import org.springframework.data.repository.query.Param;
 public interface ParcialidadCreditoRepository extends JpaRepository<ParcialidadCredito, Integer> {
     List<ParcialidadCredito> findByCreditoIdCreditoOrderByNumeroAsc(Integer idCredito);
 
-    @Query(value = "select p from ParcialidadCredito p join fetch p.credito c join fetch c.cliente cl " +
+    @Query(value = "select p from ParcialidadCredito p join fetch p.credito c join fetch c.cliente cl left join fetch c.cobrador " +
             "where p.fechaVencimiento < :hasta " +
             "and (p.fechaVencimiento >= :desde or (p.fechaVencimiento < :desde and p.estado <> 'PAGADA')) " +
             "and (:idCobrador is null or c.cobrador.idPersona = :idCobrador) " +

@@ -345,6 +345,7 @@ public class CreditoServiceImpl implements CreditoService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente, int page, int size) {
         Persona actual = obtenerPersonaActual();
         // Ver toda la cartera debe ser un permiso explícito. Poder asignar
@@ -375,6 +376,15 @@ public class CreditoServiceImpl implements CreditoService {
         List<Abono> abonos = abonoRepository.findAbonosVigentesEntre(desde, hasta);
         Map<Integer, double[]> acumulados = new LinkedHashMap<>();
         Map<Integer, Persona> personas = new LinkedHashMap<>();
+        if (soloMio) {
+            acumulados.put(idPropio, new double[2]);
+            personas.put(idPropio, actual);
+        } else {
+            for (Persona cobrador : creditoRepository.findCobradoresActivos()) {
+                acumulados.put(cobrador.getIdPersona(), new double[2]);
+                personas.put(cobrador.getIdPersona(), cobrador);
+            }
+        }
         for (ParcialidadCredito p : parcialidades) {
             Persona cobrador = p.getCredito().getCobrador();
             if (cobrador == null) continue;

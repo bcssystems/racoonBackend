@@ -92,7 +92,11 @@ public class WhatsAppServiceImpl implements WhatsAppService {
                 "Fecha: " + solicitud.getFechaSolicitud().format(DATE) + "\n\n" +
                 "⚠️ Requiere revisión en Autorizaciones.";
         for (Persona admin : personaRepository.findByRolNombreIgnoreCaseAndActivaTrue("ADMINISTRADOR")) {
-            enviar(admin.getTelefono(), "SOLICITUD_CREDITO", "solicitud:" + solicitud.getIdSolicitud() + ":admin:" + admin.getIdPersona(), mensaje);
+            String referencia = "solicitud:" + solicitud.getIdSolicitud() + ":admin:" + admin.getIdPersona();
+            if (!mensajeRepository.existsByTipoAndReferenciaAndEstadoIn("SOLICITUD_CREDITO", referencia,
+                    List.of("PENDIENTE", "ENVIADO", "DESHABILITADO"))) {
+                enviar(admin.getTelefono(), "SOLICITUD_CREDITO", referencia, mensaje);
+            }
         }
     }
 
@@ -186,7 +190,7 @@ public class WhatsAppServiceImpl implements WhatsAppService {
             try {
                 m.setIntentos(i);
                 restClient.post().uri(apiUrl.replaceAll("/$", "") + "/send-message").header("Authorization", "Bearer " + apiToken)
-                        .body(Map.of("to", m.getDestinatario(), "text", texto)).retrieve().toBodilessEntity();
+                        .body(Map.of("to", m.getDestinatario(), "text", m.getMensaje())).retrieve().toBodilessEntity();
                 m.setEstado("ENVIADO"); m.setFechaEnvio(LocalDateTime.now()); m.setDetalleError(null); mensajeRepository.save(m); return;
             } catch (RestClientException ex) {
                 last = ex;
