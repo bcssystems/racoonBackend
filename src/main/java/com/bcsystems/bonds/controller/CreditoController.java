@@ -86,6 +86,14 @@ public class CreditoController {
         return ResponseEntity.ok(creditoService.agendaCobranza(desde, hasta, idCobrador, miCartera, estado, cliente, Math.max(0, page), pageSize));
     }
 
+    @GetMapping("/cobranza/progreso")
+    @PreAuthorize("hasAuthority('COBRANZA_VER')")
+    public ResponseEntity<ProgresoCobranzaResponse> progresoCobranza(
+            @RequestParam(required = false) LocalDate fecha,
+            @RequestParam(required = false) Boolean miCartera) {
+        return ResponseEntity.ok(creditoService.progresoCobranza(fecha, miCartera));
+    }
+
     @PostMapping("/cobranza/abonos")
     @PreAuthorize("hasAuthority('COBRANZA_ABONAR')")
     public ResponseEntity<AbonoResponse> registrarAbonoCobranza(@Valid @RequestBody AbonoRequest request) {

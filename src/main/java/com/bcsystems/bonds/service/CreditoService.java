@@ -28,5 +28,7 @@ public interface CreditoService {
 
     Page<CobranzaResponse> agendaCobranza(LocalDate desde, LocalDate hasta, Integer idCobrador, Boolean miCartera, String estado, String cliente, int page, int size);
 
+    ProgresoCobranzaResponse progresoCobranza(LocalDate fecha, Boolean miCartera);
+
     AbonoResponse registrarAbonoCobranza(AbonoRequest request);
 }

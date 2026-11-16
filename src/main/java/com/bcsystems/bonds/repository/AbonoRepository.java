@@ -15,6 +15,10 @@ public interface AbonoRepository extends JpaRepository<Abono, Integer> {
 
     List<Abono> findByCajaIdCajaAndFechaBetweenOrderByFechaDesc(Integer idCaja, LocalDateTime inicio, LocalDateTime fin);
 
+    @Query("select a from Abono a join fetch a.credito c left join fetch c.cobrador " +
+            "where a.fecha >= :desde and a.fecha < :hasta and a.cancelado = false")
+    List<Abono> findAbonosVigentesEntre(@Param("desde") LocalDateTime desde, @Param("hasta") LocalDateTime hasta);
+
     Optional<Abono> findFirstByCreditoClienteIdClienteOrderByFechaDesc(Integer idCliente);
 
     @Query("SELECT MAX(a.fecha) FROM Abono a WHERE a.credito.cliente.idCliente = :idCliente")

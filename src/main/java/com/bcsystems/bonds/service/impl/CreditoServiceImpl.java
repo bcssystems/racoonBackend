@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -354,6 +356,56 @@ public class CreditoServiceImpl implements CreditoService {
         return parcialidadCreditoRepository.buscarAgenda(cobradorFiltro, inicio.atStartOfDay(), fin.plusDays(1).atStartOfDay(), estado, cliente,
                         PageRequest.of(page, size))
                 .map(this::toCobranzaResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProgresoCobranzaResponse progresoCobranza(LocalDate fecha, Boolean miCartera) {
+        Persona actual = obtenerPersonaActual();
+        boolean verTodas = tieneAutoridad("COBRANZA_VER_TODAS");
+        boolean soloMio = !verTodas || Boolean.TRUE.equals(miCartera);
+        Integer idPropio = actual.getIdPersona();
+        LocalDate dia = fecha == null ? LocalDate.now() : fecha;
+        LocalDateTime desde = dia.atStartOfDay();
+        LocalDateTime hasta = dia.plusDays(1).atStartOfDay();
+
+        List<ParcialidadCredito> parcialidades = parcialidadCreditoRepository
+                .buscarAgenda(soloMio ? idPropio : null, desde, hasta, null, null, PageRequest.of(0, 10000))
+                .getContent();
+        List<Abono> abonos = abonoRepository.findAbonosVigentesEntre(desde, hasta);
+        Map<Integer, double[]> acumulados = new LinkedHashMap<>();
+        Map<Integer, Persona> personas = new LinkedHashMap<>();
+        for (ParcialidadCredito p : parcialidades) {
+            Persona cobrador = p.getCredito().getCobrador();
+            if (cobrador == null) continue;
+            if (soloMio && !cobrador.getIdPersona().equals(idPropio)) continue;
+            double meta = Math.max(0, (p.getCapitalProgramado() == null ? 0 : p.getCapitalProgramado())
+                    + (p.getInteresProgramado() == null ? 0 : p.getInteresProgramado())
+                    - (p.getCapitalPagado() == null ? 0 : p.getCapitalPagado())
+                    - (p.getInteresPagado() == null ? 0 : p.getInteresPagado()));
+            acumulados.computeIfAbsent(cobrador.getIdPersona(), k -> new double[2])[0] += meta;
+            personas.put(cobrador.getIdPersona(), cobrador);
+        }
+        for (Abono abono : abonos) {
+            Persona cobrador = abono.getCredito().getCobrador();
+            if (cobrador == null || (soloMio && !cobrador.getIdPersona().equals(idPropio))) continue;
+            acumulados.computeIfAbsent(cobrador.getIdPersona(), k -> new double[2])[1] += abono.getMonto() == null ? 0 : abono.getMonto();
+            personas.put(cobrador.getIdPersona(), cobrador);
+        }
+        List<ProgresoCobradorResponse> detalle = acumulados.entrySet().stream().map(e -> {
+            double meta = e.getValue()[0], cobrado = e.getValue()[1];
+            double porcentaje = meta <= 0 ? (cobrado > 0 ? 100 : 0) : cobrado * 100 / meta;
+            return new ProgresoCobradorResponse(e.getKey(), nombrePersona(personas.get(e.getKey())), meta, cobrado,
+                    porcentaje, Math.max(0, meta - cobrado));
+        }).sorted((a, b) -> a.cobrador().compareToIgnoreCase(b.cobrador())).toList();
+        double metaTotal = detalle.stream().mapToDouble(ProgresoCobradorResponse::meta).sum();
+        double cobradoTotal = detalle.stream().mapToDouble(ProgresoCobradorResponse::cobrado).sum();
+        double porcentajeTotal = metaTotal <= 0 ? (cobradoTotal > 0 ? 100 : 0) : cobradoTotal * 100 / metaTotal;
+        return new ProgresoCobranzaResponse(dia, metaTotal, cobradoTotal, porcentajeTotal, detalle);
+    }
+
+    private String nombrePersona(Persona persona) {
+        return persona == null ? "Sin cobrador" : (persona.getNombre() + " " + (persona.getApellido() == null ? "" : persona.getApellido())).trim();
     }
 
     @Override
