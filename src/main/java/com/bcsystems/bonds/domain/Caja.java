@@ -41,6 +41,9 @@ public class Caja {
     @Column(nullable = false)
     private Double saldoActual;
 
+    /** Saldo capturado al abrir la sesión actual de caja. */
+    private Double saldoInicialApertura;
+
     private LocalDateTime fechaApertura;
 
     private LocalDateTime fechaCierre;

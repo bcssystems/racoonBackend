@@ -80,6 +80,7 @@ public class CajaServiceImpl implements CajaService {
                 .sucursal(sucursal)
                 .estado(CajaEstado.CERRADA)
                 .saldoActual(0.0)
+                .saldoInicialApertura(0.0)
                 .activa(true)
                 .build();
         caja = cajaRepository.save(caja);
@@ -129,11 +130,15 @@ public class CajaServiceImpl implements CajaService {
         if (request.saldoInicial() < 0) {
             throw new InvalidEntryException("El saldo inicial no puede ser negativo");
         }
-        double saldoInicial = caja.getTipo() == TipoCaja.SECUNDARIA
-                ? request.saldoInicial()
-                : configuracionService.getValorDouble("fondoCajas", request.saldoInicial());
+        // El importe confirmado por el usuario es el saldo real de apertura.
+        // fondoCajas se utiliza únicamente como sugerencia en la interfaz.
+        double saldoInicial = request.saldoInicial();
+        if (saldoInicial < 0) {
+            throw new InvalidEntryException("El saldo inicial no puede ser negativo");
+        }
         caja.setEstado(CajaEstado.ABIERTA);
         caja.setSaldoActual(saldoInicial);
+        caja.setSaldoInicialApertura(saldoInicial);
         caja.setFechaApertura(LocalDateTime.now());
         caja.setFechaCierre(null);
         caja = cajaRepository.save(caja);
@@ -450,8 +455,11 @@ public class CajaServiceImpl implements CajaService {
         List<AnticipoCorteDto> anticipos = construirAnticipos(pagosEnRango);
         double totalAnticipos = anticipos.stream().mapToDouble(a -> a.monto() == null ? 0 : a.monto()).sum();
 
-        double saldoInicial = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos
+        double saldoInicialCalculado = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos
                 - totalContado - totalAnticipos - totalAbonos;
+        double saldoInicial = caja.getSaldoInicialApertura() != null
+                ? caja.getSaldoInicialApertura()
+                : Math.max(0.0, saldoInicialCalculado);
         double saldoEsperado = saldoInicial + totalContado + totalAnticipos + totalIngresos - totalEgresos
                 - totalGastos + totalAbonos;
 
