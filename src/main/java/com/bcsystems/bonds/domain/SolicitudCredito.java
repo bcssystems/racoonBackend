@@ -18,7 +18,10 @@ public class SolicitudCredito {
     private Persona resolutor;
     @Column(nullable = false, length = 20) @Builder.Default
     private String estado = "PENDIENTE";
+    @Column(length = 30) @Builder.Default
+    private String tipoSolicitud = "NUEVA";
     @Column(nullable = false) private Double montoSolicitado;
+    private Double limiteAnterior;
     private Double montoSugerido;
     private Double montoAprobado;
     @Lob @Column(columnDefinition = "TEXT") private String encuestaJson;

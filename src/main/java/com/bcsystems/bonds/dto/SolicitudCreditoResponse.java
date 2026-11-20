@@ -6,6 +6,7 @@ import java.util.List;
 public record SolicitudCreditoResponse(
         Integer idSolicitud, Integer idCliente, String cliente, String estado,
         Double montoSolicitado, Double montoSugerido, Double montoAprobado,
+        String tipoSolicitud, Double limiteAnterior,
         String encuestaJson, String observaciones, String solicitante,
         String resolutor, LocalDateTime fechaSolicitud, LocalDateTime fechaResolucion,
         List<SolicitudCreditoDocumentoResponse> documentos

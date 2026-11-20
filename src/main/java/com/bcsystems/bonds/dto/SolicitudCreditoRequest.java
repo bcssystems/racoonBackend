@@ -4,5 +4,6 @@ public record SolicitudCreditoRequest(
         Integer idCliente,
         Double montoSolicitado,
         String encuestaJson,
-        String observaciones
+        String observaciones,
+        String tipoSolicitud
 ) {}

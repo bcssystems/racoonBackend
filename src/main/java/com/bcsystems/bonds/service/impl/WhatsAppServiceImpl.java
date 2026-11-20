@@ -83,11 +83,13 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     public void notificarSolicitudCredito(SolicitudCreditoCreadaEvent event) {
         SolicitudCredito solicitud = solicitudRepository.findById(event.idSolicitud()).orElse(null);
         if (solicitud == null) return;
-        String mensaje = "📋 NUEVA SOLICITUD DE CRÉDITO\n\n" +
+        if (solicitud.getSolicitante() != null && solicitud.getSolicitante().getRol() != null
+                && "ADMINISTRADOR".equalsIgnoreCase(solicitud.getSolicitante().getRol().getNombre())) return;
+        boolean aumento = "AUMENTO_LINEA".equals(solicitud.getTipoSolicitud());
+        String mensaje = "📋 " + (aumento ? "NUEVA SOLICITUD DE AUMENTO DE LÍNEA" : "NUEVA SOLICITUD DE CRÉDITO") + "\n\n" +
                 "Solicitud: #" + solicitud.getIdSolicitud() + "\n" +
                 "Cliente: " + nombre(solicitud.getCliente()) + "\n" +
-                "Monto solicitado: $" + dinero(solicitud.getMontoSolicitado()) + "\n" +
-                "Monto sugerido: $" + dinero(solicitud.getMontoSugerido()) + "\n" +
+                (aumento ? "Límite anterior: $" + dinero(solicitud.getLimiteAnterior()) + "\nNuevo límite: $" + dinero(solicitud.getMontoSolicitado()) + "\n" : "Monto solicitado: $" + dinero(solicitud.getMontoSolicitado()) + "\nMonto sugerido: $" + dinero(solicitud.getMontoSugerido()) + "\n") +
                 "Solicitante: " + nombre(solicitud.getSolicitante()) + "\n" +
                 "Fecha: " + solicitud.getFechaSolicitud().format(DATE) + "\n\n" +
                 "⚠️ Requiere revisión en Autorizaciones.";

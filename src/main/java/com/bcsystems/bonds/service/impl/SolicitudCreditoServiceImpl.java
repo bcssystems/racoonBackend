@@ -42,13 +42,23 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
             throw new InvalidEntryException("Cliente y monto solicitado son obligatorios");
         Cliente cliente = clienteRepository.findById(request.idCliente()).orElseThrow(() -> new NotFoundException("Cliente no encontrado"));
         if (Boolean.TRUE.equals(cliente.getEnListaNegra())) throw new InvalidEntryException("El cliente está en lista negra");
-        if (Boolean.TRUE.equals(cliente.getTieneCredito())) throw new InvalidEntryException("El cliente ya tiene un crédito aprobado");
-        if (solicitudRepository.findByClienteIdClienteOrderByFechaSolicitudDesc(request.idCliente()).stream()
-                .anyMatch(s -> "PENDIENTE".equals(s.getEstado()) || "APROBADA".equals(s.getEstado())))
-            throw new InvalidEntryException("El cliente ya tiene una solicitud pendiente o un crédito aprobado");
+        String tipo = "AUMENTO_LINEA".equalsIgnoreCase(request.tipoSolicitud()) ? "AUMENTO_LINEA" : "NUEVA";
+        List<SolicitudCredito> anteriores = solicitudRepository.findByClienteIdClienteOrderByFechaSolicitudDesc(request.idCliente());
+        if (tipo.equals("AUMENTO_LINEA")) {
+            if (!Boolean.TRUE.equals(cliente.getTieneCredito())) throw new InvalidEntryException("El cliente no tiene una línea de crédito aprobada");
+            double limiteActual = cliente.getLimiteCredito() == null ? 0 : cliente.getLimiteCredito();
+            if (request.montoSolicitado() <= limiteActual) throw new InvalidEntryException("El nuevo límite debe ser mayor al límite actual");
+            if (anteriores.stream().anyMatch(s -> "PENDIENTE".equals(s.getEstado()) && "AUMENTO_LINEA".equals(s.getTipoSolicitud())))
+                throw new InvalidEntryException("El cliente ya tiene un aumento de línea pendiente");
+        } else {
+            if (Boolean.TRUE.equals(cliente.getTieneCredito())) throw new InvalidEntryException("El cliente ya tiene un crédito aprobado");
+            if (anteriores.stream().anyMatch(s -> "PENDIENTE".equals(s.getEstado()) || "APROBADA".equals(s.getEstado())))
+                throw new InvalidEntryException("El cliente ya tiene una solicitud pendiente o un crédito aprobado");
+        }
         Persona solicitante = usuarioActual();
-        double sugerido = calcularSugerido(request.encuestaJson(), request.montoSolicitado(), cliente.getScoreCredito());
+        double sugerido = tipo.equals("AUMENTO_LINEA") ? request.montoSolicitado() : calcularSugerido(request.encuestaJson(), request.montoSolicitado(), cliente.getScoreCredito());
         SolicitudCredito solicitud = SolicitudCredito.builder().cliente(cliente).solicitante(solicitante)
+                .tipoSolicitud(tipo).limiteAnterior(tipo.equals("AUMENTO_LINEA") ? cliente.getLimiteCredito() : null)
                 .montoSolicitado(request.montoSolicitado()).montoSugerido(sugerido)
                 .encuestaJson(request.encuestaJson())
                 .observaciones(request.observaciones()).build();
@@ -83,6 +93,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
             if (!destino.startsWith(dir)) throw new InvalidEntryException("Nombre de archivo inválido");
             Files.copy(archivo.getInputStream(), destino, StandardCopyOption.REPLACE_EXISTING);
             SolicitudCreditoDocumento doc = documentoRepository.save(SolicitudCreditoDocumento.builder().solicitud(solicitud).tipo(tipo).url("solicitudes-credito/" + id + "/" + nombre).nombreArchivo(original).mimeType(mime).build());
+            autoAprobarSiCorresponde(solicitud);
             return documentoResponse(doc);
         } catch (IOException e) { throw new InvalidEntryException("No se pudo guardar el documento"); }
     }
@@ -108,11 +119,14 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         SolicitudCredito s = solicitudRepository.findById(id).orElseThrow(() -> new NotFoundException("Solicitud no encontrada"));
         if (!"PENDIENTE".equals(s.getEstado())) throw new InvalidEntryException("La solicitud ya fue resuelta");
         if (request.aprobar()) {
-            Set<String> requeridos = Set.of("INE_FRONTAL", "INE_TRASERA", "DOMICILIO", "PAGARE");
+            Set<String> requeridos = "AUMENTO_LINEA".equals(s.getTipoSolicitud())
+                    ? Set.of("PAGARE") : Set.of("INE_FRONTAL", "INE_TRASERA", "DOMICILIO", "PAGARE");
             Set<String> cargados = new HashSet<>();
             documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(id).forEach(d -> cargados.add(d.getTipo()));
             if (!cargados.containsAll(requeridos)) throw new InvalidEntryException("La solicitud requiere INE frontal, INE trasera, comprobante y pagaré");
             double monto = request.montoAprobado() == null ? s.getMontoSugerido() : request.montoAprobado();
+            if ("AUMENTO_LINEA".equals(s.getTipoSolicitud()) && monto <= (s.getLimiteAnterior() == null ? 0 : s.getLimiteAnterior()))
+                throw new InvalidEntryException("El nuevo límite debe ser mayor al límite anterior");
             aprobar(s, monto, request.observaciones());
         } else { s.setEstado("RECHAZADA"); s.setObservaciones(request.observaciones()); }
         s.setResolutor(usuarioActual()); s.setFechaResolucion(LocalDateTime.now());
@@ -125,6 +139,24 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         if (monto <= 0) throw new InvalidEntryException("El monto aprobado debe ser mayor a cero");
         s.setEstado("APROBADA"); s.setMontoAprobado(monto); s.setObservaciones(observacion);
         s.getCliente().setTieneCredito(true); s.getCliente().setLimiteCredito(monto); clienteRepository.save(s.getCliente());
+    }
+
+    private void autoAprobarSiCorresponde(SolicitudCredito solicitud) {
+        if (!"PENDIENTE".equals(solicitud.getEstado()) || !esAdministrador(solicitud.getSolicitante())) return;
+        Set<String> requeridos = "AUMENTO_LINEA".equals(solicitud.getTipoSolicitud())
+                ? Set.of("PAGARE") : Set.of("INE_FRONTAL", "INE_TRASERA", "DOMICILIO", "PAGARE");
+        Set<String> cargados = new HashSet<>();
+        documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(solicitud.getIdSolicitud()).forEach(d -> cargados.add(d.getTipo()));
+        if (!cargados.containsAll(requeridos)) return;
+        aprobar(solicitud, solicitud.getMontoSolicitado(), "Aprobación automática de administrador");
+        solicitud.setResolutor(solicitud.getSolicitante());
+        solicitud.setFechaResolucion(LocalDateTime.now());
+        solicitudRepository.save(solicitud);
+        auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "RESOLUCION_AUTO", solicitud.getSolicitante().getUsuario(), solicitud.getEstado());
+    }
+
+    private boolean esAdministrador(Persona persona) {
+        return persona != null && persona.getRol() != null && "ADMINISTRADOR".equalsIgnoreCase(persona.getRol().getNombre());
     }
 
     private double calcularSugerido(String json, double solicitado, Integer score) {
@@ -144,5 +176,5 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
                 d.getNombreArchivo(), d.getMimeType(), d.getFechaCarga());
     }
 
-    private SolicitudCreditoResponse toResponse(SolicitudCredito s) { List<SolicitudCreditoDocumentoResponse> docs = documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(s.getIdSolicitud()).stream().map(this::documentoResponse).toList(); return new SolicitudCreditoResponse(s.getIdSolicitud(), s.getCliente().getIdCliente(), (s.getCliente().getNombre() + " " + s.getCliente().getApellidoPaterno()).trim(), s.getEstado(), s.getMontoSolicitado(), s.getMontoSugerido(), s.getMontoAprobado(), s.getEncuestaJson(), s.getObservaciones(), s.getSolicitante().getUsuario(), s.getResolutor() == null ? null : s.getResolutor().getUsuario(), s.getFechaSolicitud(), s.getFechaResolucion(), docs); }
+    private SolicitudCreditoResponse toResponse(SolicitudCredito s) { List<SolicitudCreditoDocumentoResponse> docs = documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(s.getIdSolicitud()).stream().map(this::documentoResponse).toList(); return new SolicitudCreditoResponse(s.getIdSolicitud(), s.getCliente().getIdCliente(), (s.getCliente().getNombre() + " " + s.getCliente().getApellidoPaterno()).trim(), s.getEstado(), s.getMontoSolicitado(), s.getMontoSugerido(), s.getMontoAprobado(), s.getTipoSolicitud() == null ? "NUEVA" : s.getTipoSolicitud(), s.getLimiteAnterior(), s.getEncuestaJson(), s.getObservaciones(), s.getSolicitante().getUsuario(), s.getResolutor() == null ? null : s.getResolutor().getUsuario(), s.getFechaSolicitud(), s.getFechaResolucion(), docs); }
 }
