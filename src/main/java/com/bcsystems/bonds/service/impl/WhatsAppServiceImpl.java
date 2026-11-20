@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.text.NumberFormat;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -24,6 +26,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class WhatsAppServiceImpl implements WhatsAppService {
+    private static final Logger log = LoggerFactory.getLogger(WhatsAppServiceImpl.class);
     private final MensajeWhatsAppRepository mensajeRepository;
     private final CreditoRepository creditoRepository;
     private final PersonaRepository personaRepository;
@@ -32,7 +35,7 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     private final VentaPagoRepository pagoRepository;
     private final SolicitudCreditoRepository solicitudRepository;
 
-    @Value("${wasender.enabled:false}") private boolean enabled;
+    @Value("${wasender.enabled:true}") private boolean enabled;
     @Value("${wasender.api-url:https://wasenderapi.com/api}") private String apiUrl;
     @Value("${wasender.api-token:}") private String apiToken;
     @Value("${wasender.country-code:52}") private String countryCode;
@@ -60,6 +63,8 @@ public class WhatsAppServiceImpl implements WhatsAppService {
         }
         Persona nuevo = credito.getCobrador();
         if (nuevo != null && (idCobradorAnterior == null || !nuevo.getIdPersona().equals(idCobradorAnterior))) {
+            log.info("WhatsApp de crédito asignado: credito={}, cobrador={}, telefonoConfigurado={}", idCredito,
+                    nuevo.getIdPersona(), nuevo.getTelefono() != null && !nuevo.getTelefono().isBlank());
             enviar(nuevo.getTelefono(), "CREDITO_ASIGNADO", "credito:" + idCredito, mensajeCredito(credito, nuevo));
         }
     }
@@ -185,26 +190,36 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     }
 
     private void enviarRegistro(MensajeWhatsApp m) {
-        if (!enabled || apiToken == null || apiToken.isBlank()) { m.setEstado("DESHABILITADO"); mensajeRepository.save(m); return; }
-        if (m.getDestinatario() == null) { m.setEstado("ERROR"); m.setDetalleError("Teléfono no válido"); mensajeRepository.save(m); return; }
+        if (!enabled || apiToken == null || apiToken.isBlank()) {
+            m.setEstado("DESHABILITADO"); m.setDetalleError(!enabled ? "WASENDER_ENABLED está desactivado" : "WASENDER_API_TOKEN vacío"); mensajeRepository.save(m);
+            log.warn("WhatsApp no enviado: id={}, tipo={}, estado={}, enabled={}, tokenConfigurado={}", m.getIdMensaje(), m.getTipo(), m.getEstado(), enabled, apiToken != null && !apiToken.isBlank());
+            return;
+        }
+        if (m.getDestinatario() == null) { m.setEstado("ERROR"); m.setDetalleError("Teléfono no válido"); mensajeRepository.save(m); log.warn("WhatsApp no enviado por teléfono inválido: id={}, tipo={}", m.getIdMensaje(), m.getTipo()); return; }
         RestClientException last = null;
         for (int i = 1; i <= 3; i++) {
             try {
                 m.setIntentos(i);
                 restClient.post().uri(apiUrl.replaceAll("/$", "") + "/send-message").header("Authorization", "Bearer " + apiToken)
                         .body(Map.of("to", m.getDestinatario(), "text", m.getMensaje())).retrieve().toBodilessEntity();
-                m.setEstado("ENVIADO"); m.setFechaEnvio(LocalDateTime.now()); m.setDetalleError(null); mensajeRepository.save(m); return;
+                m.setEstado("ENVIADO"); m.setFechaEnvio(LocalDateTime.now()); m.setDetalleError(null); mensajeRepository.save(m); log.info("WhatsApp enviado: id={}, tipo={}, destinatario={}", m.getIdMensaje(), m.getTipo(), m.getDestinatario()); return;
             } catch (RestClientException ex) {
                 last = ex;
                 if (i < 3) try { Thread.sleep(1000L * i); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); break; }
             }
         }
         m.setEstado("ERROR"); m.setDetalleError(last == null ? "Error desconocido" : last.getMessage()); mensajeRepository.save(m);
+        log.error("WhatsApp falló después de {} intentos: id={}, tipo={}, destinatario={}, detalle={}", m.getIntentos(), m.getIdMensaje(), m.getTipo(), m.getDestinatario(), m.getDetalleError());
     }
 
     private String normalizar(String phone) {
         if (phone == null || phone.isBlank()) return null;
-        String d = phone.replaceAll("\\D", ""); if (d.startsWith("00")) d = d.substring(2); if (d.length() == 10) d = countryCode + d; return d.length() >= 10 ? d : null;
+        String d = phone.replaceAll("\\D", "");
+        if (d.startsWith("00")) d = d.substring(2);
+        if ((d.startsWith("044") || d.startsWith("045")) && d.length() == 13) d = d.substring(3);
+        if (d.startsWith("01") && d.length() == 12) d = d.substring(2);
+        if (d.length() == 10) d = countryCode + d;
+        return d.length() >= 10 ? "+" + d : null;
     }
     private String nombre(Persona p) { return p == null ? "Sin nombre" : nombre(p.getNombre(), p.getApellido()); }
     private String nombre(Cliente c) { return c == null ? "Sin cliente" : nombre(c.getNombre(), c.getApellidoPaterno()); }
