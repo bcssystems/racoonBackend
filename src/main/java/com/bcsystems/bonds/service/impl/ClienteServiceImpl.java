@@ -20,6 +20,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.core.io.Resource;
@@ -37,6 +39,11 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class ClienteServiceImpl implements ClienteService {
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void normalizarLimitesCreditoExistentes() {
+        clienteRepository.normalizarLimitesCreditoNulos();
+    }
 
     private final ClienteRepository clienteRepository;
     private final ClienteIneRepository clienteIneRepository;
@@ -96,7 +103,7 @@ public class ClienteServiceImpl implements ClienteService {
                 .representanteLegal(request.representanteLegal())
                 .direccionEntrega(request.direccionEntrega())
                 .tieneCredito(request.tieneCredito() != null && request.tieneCredito())
-                 .limiteCredito(request.limiteCredito())
+                 .limiteCredito(normalizarLimite(request.limiteCredito(), request.tieneCredito()))
                  .latitud(request.latitud())
                  .longitud(request.longitud())
                  .precisionUbicacion(request.precisionUbicacion())
@@ -138,7 +145,7 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.setRepresentanteLegal(request.representanteLegal());
         cliente.setDireccionEntrega(request.direccionEntrega());
         cliente.setTieneCredito(request.tieneCredito() != null && request.tieneCredito());
-        cliente.setLimiteCredito(request.limiteCredito());
+        cliente.setLimiteCredito(normalizarLimite(request.limiteCredito(), request.tieneCredito()));
         String direccionNueva = fingerprintDireccion(request.cp(), request.estado(), request.municipio(), request.colonia(), request.calle(), request.numExt(), request.numInt());
         boolean direccionCambio = !direccionAnterior.equals(direccionNueva);
         if (direccionCambio && (request.precisionUbicacion() == null || request.precisionUbicacion().isBlank())) {
@@ -156,6 +163,14 @@ public class ClienteServiceImpl implements ClienteService {
         auditoriaService.registrar("Cliente", id, "ACTUALIZACION",
                 obtenerUsuarioActual(), "Cliente actualizado: " + cliente.getNombre());
         return toResponse(cliente);
+    }
+
+    private Double normalizarLimite(Double limite, Boolean tieneCredito) {
+        double valor = limite == null ? 0.0 : limite;
+        if (valor < 0) {
+            throw new InvalidEntryException("El límite de crédito no puede ser negativo");
+        }
+        return Boolean.TRUE.equals(tieneCredito) ? valor : 0.0;
     }
 
     @Override
