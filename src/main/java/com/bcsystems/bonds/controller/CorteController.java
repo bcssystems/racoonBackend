@@ -205,8 +205,10 @@ public class CorteController {
                         .filter(gasto -> gasto.getEstado() == EstadoGasto.AUTORIZADO)
                         .toList()
                 : java.util.List.of();
-        double totalGastos = c.getTotalGastos() != null ? c.getTotalGastos()
-                : gastosPeriodo.stream().mapToDouble(Gasto::getMonto).sum();
+        // El desglose de gastos autorizados es la fuente de verdad para que
+        // cortes antiguos o registros guardados con totalGastos nulo/cero no
+        // omitan gastos que sí redujeron el efectivo de la caja.
+        double totalGastos = gastosPeriodo.stream().mapToDouble(Gasto::getMonto).sum();
 
         List<AbonoCorteDto> abonosList = (c.getCaja() != null && c.getFechaApertura() != null
                 && c.getFechaCierre() != null)
