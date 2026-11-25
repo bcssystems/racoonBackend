@@ -257,7 +257,7 @@ public class CorteController {
                         .toList()
                 : java.util.List.of();
 
-        double saldoEsperado = calcularSaldoEsperado(c, totalEgresos);
+        double saldoEsperado = calcularSaldoEsperado(c, totalEgresos, detallePagos);
 
         return new CorteResponse(
                 c.getIdCorte(), c.getCaja().getIdCaja(), c.getCaja().getNombre(),
@@ -279,16 +279,24 @@ public class CorteController {
                 c.getFechaRecepcion());
     }
 
-    private double calcularSaldoEsperado(CorteCaja corte, double totalEgresos) {
+    private double calcularSaldoEsperado(CorteCaja corte, double totalEgresos,
+                                         List<CorteDetallePagoDto> detallePagos) {
+        double pagosNoEfectivo = detallePagos.stream()
+                .filter(d -> !esEfectivo(d.tipoPagoNombre()))
+                .mapToDouble(d -> valor(d.monto()))
+                .sum();
         return valor(corte.getSaldoInicial())
-                + valor(corte.getTotalVentasContado())
                 + valor(corte.getTotalIngresos())
-                - totalEgresos
-                + valor(corte.getTotalAbonos());
+                - pagosNoEfectivo
+                - totalEgresos;
     }
 
     private double valor(Double monto) {
         return monto == null ? 0.0 : monto;
+    }
+
+    private boolean esEfectivo(String nombre) {
+        return nombre != null && "EFECTIVO".equalsIgnoreCase(nombre.trim());
     }
 
     private List<AnticipoCorteDto> obtenerAnticipos(Integer idCaja, LocalDateTime inicio, LocalDateTime fin) {

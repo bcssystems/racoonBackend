@@ -455,14 +455,10 @@ public class CajaServiceImpl implements CajaService {
         List<AnticipoCorteDto> anticipos = construirAnticipos(pagosEnRango);
         double totalAnticipos = anticipos.stream().mapToDouble(a -> a.monto() == null ? 0 : a.monto()).sum();
 
-        double saldoInicialCalculado = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos
-                - totalContado - totalAbonos;
+        double saldoInicialCalculado = caja.getSaldoActual() - totalIngresos + totalEgresos + totalGastos;
         double saldoInicial = caja.getSaldoInicialApertura() != null
                 ? caja.getSaldoInicialApertura()
                 : Math.max(0.0, saldoInicialCalculado);
-        double saldoEsperado = saldoInicial + totalContado + totalIngresos - totalEgresos
-                - totalGastos + totalAbonos;
-
         pagosEnRango = pagosEnRango.stream().filter(vp -> !esPagoCredito(vp)).toList();
         java.util.Map<Integer, TipoPago> tipoPorId = pagosEnRango.stream()
                 .map(VentaPago::getTipoPago)
@@ -498,6 +494,17 @@ public class CajaServiceImpl implements CajaService {
                         montosPorTipo.merge(efectivo.getIdTipoPago(), -totalGastos, Double::sum);
                     });
         }
+
+        // El saldo esperado es efectivo físico: tarjetas y transferencias se
+        // concilian aparte. Los ingresos manuales no tienen forma asociada y
+        // se consideran efectivo.
+        double totalPagos = montosPorTipo.values().stream().mapToDouble(Double::doubleValue).sum();
+        double totalPagosEfectivo = montosPorTipo.entrySet().stream()
+                .filter(e -> tipoPorId.get(e.getKey()) != null
+                        && esEfectivo(tipoPorId.get(e.getKey()).getNombre()))
+                .mapToDouble(java.util.Map.Entry::getValue).sum();
+        double ingresosEfectivo = totalIngresos - totalPagos + totalPagosEfectivo;
+        double saldoEsperado = saldoInicial + ingresosEfectivo - totalEgresos - totalGastos;
 
         List<CorteDetallePagoDto> detallePagos = montosPorTipo.entrySet().stream()
                 .map(e -> new CorteDetallePagoDto(
@@ -687,11 +694,14 @@ public class CajaServiceImpl implements CajaService {
             sistema = detallePagos.stream().mapToDouble(CorteDetallePagoDto::monto).sum();
             diferencia = existeConteoReal ? totalReal - sistema : 0.0;
         }
+        double pagosNoEfectivo = detallePagos.stream()
+                .filter(d -> !esEfectivo(d.tipoPagoNombre()))
+                .mapToDouble(d -> d.monto() == null ? 0 : d.monto())
+                .sum();
         double saldoEsperado = (corte.getSaldoInicial() == null ? 0 : corte.getSaldoInicial())
-                + (corte.getTotalVentasContado() == null ? 0 : corte.getTotalVentasContado())
                 + (corte.getTotalIngresos() == null ? 0 : corte.getTotalIngresos())
-                - totalEgresosCorte
-                + (corte.getTotalAbonos() == null ? 0 : corte.getTotalAbonos());
+                - pagosNoEfectivo
+                - totalEgresosCorte;
 
         return new CorteResponse(
                 corte.getIdCorte(), corte.getCaja().getIdCaja(), corte.getCaja().getNombre(),
@@ -716,6 +726,10 @@ public class CajaServiceImpl implements CajaService {
     private boolean esPagoCredito(VentaPago pago) {
         String nombre = pago.getTipoPago() == null ? null : pago.getTipoPago().getNombre();
         return nombre != null && ("credito".equalsIgnoreCase(nombre) || "crédito".equalsIgnoreCase(nombre));
+    }
+
+    private boolean esEfectivo(String nombre) {
+        return nombre != null && "EFECTIVO".equalsIgnoreCase(nombre.trim());
     }
 
     private List<AnticipoCorteDto> construirAnticipos(List<VentaPago> pagos) {
