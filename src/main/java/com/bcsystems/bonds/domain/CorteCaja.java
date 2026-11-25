@@ -45,6 +45,10 @@ public class CorteCaja {
     @Column
     private Double totalGastos;
 
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private Boolean egresosIncluyenGastos = false;
+
     @Column
     private Double totalAbonos;
 

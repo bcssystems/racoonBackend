@@ -181,13 +181,13 @@ public class CorteController {
     }
 
     private CorteResponse toResponse(CorteCaja c) {
-        List<CorteDetallePagoDto> detallePagos = corteDetallePagoRepository.findByCorteIdCorte(c.getIdCorte())
+        List<CorteDetallePagoDto> detallePagos = new java.util.ArrayList<>(corteDetallePagoRepository.findByCorteIdCorte(c.getIdCorte())
                 .stream().map(d -> new CorteDetallePagoDto(
                         d.getTipoPago().getIdTipoPago(),
                         d.getTipoPago().getNombre(),
                         d.getMonto(),
                         d.getMontoReal()))
-                .toList();
+                .toList());
         boolean existeConteoReal = detallePagos.stream().anyMatch(d -> d.montoReal() != null);
         double totalReal = detallePagos.stream()
                 .filter(d -> d.montoReal() != null)
@@ -209,6 +209,24 @@ public class CorteController {
         // cortes antiguos o registros guardados con totalGastos nulo/cero no
         // omitan gastos que sí redujeron el efectivo de la caja.
         double totalGastos = gastosPeriodo.stream().mapToDouble(Gasto::getMonto).sum();
+        double totalEgresos = Boolean.TRUE.equals(c.getEgresosIncluyenGastos())
+                ? valor(c.getTotalEgresos())
+                : valor(c.getTotalEgresos()) + totalGastos;
+        if (!Boolean.TRUE.equals(c.getEgresosIncluyenGastos()) && totalGastos > 0) {
+            for (int i = 0; i < detallePagos.size(); i++) {
+                CorteDetallePagoDto detalle = detallePagos.get(i);
+                if (detalle.tipoPagoNombre() != null && "EFECTIVO".equalsIgnoreCase(detalle.tipoPagoNombre().trim())) {
+                    detallePagos.set(i, new CorteDetallePagoDto(detalle.idTipoPago(), detalle.tipoPagoNombre(),
+                            detalle.monto() - totalGastos, detalle.montoReal()));
+                    break;
+                }
+            }
+            existeConteoReal = detallePagos.stream().anyMatch(d -> d.montoReal() != null);
+            totalReal = detallePagos.stream().filter(d -> d.montoReal() != null)
+                    .mapToDouble(CorteDetallePagoDto::montoReal).sum();
+            sistema = detallePagos.stream().mapToDouble(CorteDetallePagoDto::monto).sum();
+            diferencia = existeConteoReal ? totalReal - sistema : 0.0;
+        }
 
         List<AbonoCorteDto> abonosList = (c.getCaja() != null && c.getFechaApertura() != null
                 && c.getFechaCierre() != null)
@@ -239,14 +257,14 @@ public class CorteController {
                         .toList()
                 : java.util.List.of();
 
-        double saldoEsperado = calcularSaldoEsperado(c, totalGastos, totalAnticipos);
+        double saldoEsperado = calcularSaldoEsperado(c, totalEgresos);
 
         return new CorteResponse(
                 c.getIdCorte(), c.getCaja().getIdCaja(), c.getCaja().getNombre(),
                 c.getCaja().getSucursal().getIdSucursal(), c.getCaja().getSucursal().getNombre(),
                 c.getSaldoInicial(), c.getTotalVentas(),
                 c.getTotalVentasContado(), c.getTotalVentasCredito(),
-                c.getTotalIngresos(), c.getTotalEgresos(), totalGastos,
+                 c.getTotalIngresos(), totalEgresos, totalGastos,
                  c.getTotalAbonos() != null ? c.getTotalAbonos() : 0.0,
                  totalAnticipos,
                  c.getSaldoFinalContado(), saldoEsperado,
@@ -261,13 +279,11 @@ public class CorteController {
                 c.getFechaRecepcion());
     }
 
-    private double calcularSaldoEsperado(CorteCaja corte, double totalGastos, double totalAnticipos) {
+    private double calcularSaldoEsperado(CorteCaja corte, double totalEgresos) {
         return valor(corte.getSaldoInicial())
                 + valor(corte.getTotalVentasContado())
-                + totalAnticipos
                 + valor(corte.getTotalIngresos())
-                - valor(corte.getTotalEgresos())
-                - totalGastos
+                - totalEgresos
                 + valor(corte.getTotalAbonos());
     }
 
