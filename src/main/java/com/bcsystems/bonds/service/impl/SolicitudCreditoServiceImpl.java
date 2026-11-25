@@ -64,6 +64,9 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
                 .observaciones(request.observaciones()).build();
         solicitud = solicitudRepository.save(solicitud);
         auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "CREACION", solicitante.getUsuario(), "Solicitud de crédito creada");
+        if ("AUMENTO_LINEA".equals(tipo) && esAdministrador(solicitante)) {
+            aprobarAutomaticamenteComoAdministrador(solicitud);
+        }
         eventPublisher.publishEvent(new SolicitudCreditoCreadaEvent(solicitud.getIdSolicitud()));
         return toResponse(solicitud);
     }
@@ -118,20 +121,28 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         if (!puedeResolver(request.aprobar())) throw new InvalidEntryException("No tienes permiso para resolver solicitudes de crédito");
         SolicitudCredito s = solicitudRepository.findById(id).orElseThrow(() -> new NotFoundException("Solicitud no encontrada"));
         if (!"PENDIENTE".equals(s.getEstado())) throw new InvalidEntryException("La solicitud ya fue resuelta");
+        Persona resolutor = usuarioActual();
+        boolean administrador = esAdministrador(resolutor);
         if (request.aprobar()) {
             Set<String> requeridos = "AUMENTO_LINEA".equals(s.getTipoSolicitud())
                     ? Set.of("PAGARE") : Set.of("INE_FRONTAL", "INE_TRASERA", "DOMICILIO", "PAGARE");
             Set<String> cargados = new HashSet<>();
             documentoRepository.findBySolicitudIdSolicitudOrderByFechaCargaAsc(id).forEach(d -> cargados.add(d.getTipo()));
-            if (!cargados.containsAll(requeridos)) throw new InvalidEntryException("La solicitud requiere INE frontal, INE trasera, comprobante y pagaré");
+            if (!cargados.containsAll(requeridos) && !administrador)
+                throw new InvalidEntryException("La solicitud requiere documentos completos o autorización de un administrador");
             double monto = request.montoAprobado() == null ? s.getMontoSugerido() : request.montoAprobado();
             if ("AUMENTO_LINEA".equals(s.getTipoSolicitud()) && monto <= (s.getLimiteAnterior() == null ? 0 : s.getLimiteAnterior()))
                 throw new InvalidEntryException("El nuevo límite debe ser mayor al límite anterior");
-            aprobar(s, monto, request.observaciones());
+            String observaciones = request.observaciones();
+            if (!cargados.containsAll(requeridos)) {
+                observaciones = (observaciones == null || observaciones.isBlank() ? "" : observaciones + " ")
+                        + "Aprobación administrativa sin documentos completos.";
+            }
+            aprobar(s, monto, observaciones);
         } else { s.setEstado("RECHAZADA"); s.setObservaciones(request.observaciones()); }
-        s.setResolutor(usuarioActual()); s.setFechaResolucion(LocalDateTime.now());
+        s.setResolutor(resolutor); s.setFechaResolucion(LocalDateTime.now());
         solicitudRepository.save(s);
-        auditoriaService.registrar("SolicitudCredito", id, "RESOLUCION", usuarioActual().getUsuario(), s.getEstado());
+        auditoriaService.registrar("SolicitudCredito", id, "RESOLUCION", resolutor.getUsuario(), s.getEstado());
         return toResponse(s);
     }
 
@@ -153,6 +164,15 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         solicitud.setFechaResolucion(LocalDateTime.now());
         solicitudRepository.save(solicitud);
         auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "RESOLUCION_AUTO", solicitud.getSolicitante().getUsuario(), solicitud.getEstado());
+    }
+
+    private void aprobarAutomaticamenteComoAdministrador(SolicitudCredito solicitud) {
+        aprobar(solicitud, solicitud.getMontoSolicitado(), "Aprobación automática administrativa sin documentos");
+        solicitud.setResolutor(solicitud.getSolicitante());
+        solicitud.setFechaResolucion(LocalDateTime.now());
+        solicitudRepository.save(solicitud);
+        auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "RESOLUCION_AUTO",
+                solicitud.getSolicitante().getUsuario(), solicitud.getEstado());
     }
 
     private boolean esAdministrador(Persona persona) {
