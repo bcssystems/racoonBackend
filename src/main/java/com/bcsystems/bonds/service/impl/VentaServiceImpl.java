@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import com.bcsystems.bonds.service.WhatsAppService;
 import com.bcsystems.bonds.event.CreditoAsignadoEvent;
+import com.bcsystems.bonds.event.VentaCreditoCreadaEvent;
+import com.bcsystems.bonds.event.VentaCanceladaEvent;
 import org.springframework.context.ApplicationEventPublisher;
 
 @Service
@@ -303,6 +305,7 @@ public class VentaServiceImpl implements VentaService {
                     .build();
             credito = creditoRepository.save(credito);
             crearParcialidades(credito, montoCredito, interesTotal, numeroParcialidades, periodicidad, fechaPrimerPago);
+            eventPublisher.publishEvent(new VentaCreditoCreadaEvent(venta.getIdVenta()));
             if (cobrador != null) {
                 eventPublisher.publishEvent(new CreditoAsignadoEvent(credito.getIdCredito(), null, cobrador.getIdPersona()));
             }
@@ -560,6 +563,7 @@ public class VentaServiceImpl implements VentaService {
 
         auditoriaService.registrar("Venta", id, "ACTUALIZACION", autorizador.getUsuario(),
                 "Cancelacion autorizada - Venta #" + id);
+        eventPublisher.publishEvent(new VentaCanceladaEvent(id));
 
         return toResponse(venta, detalles);
     }

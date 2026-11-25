@@ -5,6 +5,10 @@ import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.WhatsAppService;
 import com.bcsystems.bonds.event.CreditoAsignadoEvent;
 import com.bcsystems.bonds.event.SolicitudCreditoCreadaEvent;
+import com.bcsystems.bonds.event.SolicitudCreditoResueltaEvent;
+import com.bcsystems.bonds.event.VentaCreditoCreadaEvent;
+import com.bcsystems.bonds.event.AbonoRegistradoEvent;
+import com.bcsystems.bonds.event.VentaCanceladaEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -34,6 +38,8 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     private final VentaDetalleRepository detalleRepository;
     private final VentaPagoRepository pagoRepository;
     private final SolicitudCreditoRepository solicitudRepository;
+    private final VentaRepository ventaRepository;
+    private final AbonoRepository abonoRepository;
 
     @Value("${wasender.enabled:true}") private boolean enabled;
     @Value("${wasender.api-url:https://wasenderapi.com/api}") private String apiUrl;
@@ -56,7 +62,8 @@ public class WhatsAppServiceImpl implements WhatsAppService {
         if (credito == null) return;
         if (idCobradorAnterior != null && !idCobradorAnterior.equals(idCobradorNuevo)) {
             Persona anterior = personaRepository.findById(idCobradorAnterior).orElse(null);
-            if (anterior != null) enviar(anterior.getTelefono(), "REASIGNACION_RETIRO", "credito:" + idCredito,
+            if (anterior != null) enviarUnaVez(anterior.getTelefono(), "REASIGNACION_RETIRO",
+                    "credito:" + idCredito + ":cobrador:" + anterior.getIdPersona(),
                     "⚠️ COBRANZA REASIGNADA\n\nHola, " + nombre(anterior) + ".\n\nEl crédito " +
                             valor(credito.getFolio(), "#" + idCredito) + " del cliente " + nombre(credito.getCliente()) +
                             " ya no se encuentra asignado a tu cartera.");
@@ -65,8 +72,103 @@ public class WhatsAppServiceImpl implements WhatsAppService {
         if (nuevo != null && (idCobradorAnterior == null || !nuevo.getIdPersona().equals(idCobradorAnterior))) {
             log.info("WhatsApp de crédito asignado: credito={}, cobrador={}, telefonoConfigurado={}", idCredito,
                     nuevo.getIdPersona(), nuevo.getTelefono() != null && !nuevo.getTelefono().isBlank());
-            enviar(nuevo.getTelefono(), "CREDITO_ASIGNADO", "credito:" + idCredito, mensajeCredito(credito, nuevo));
+            enviarUnaVez(nuevo.getTelefono(), "CREDITO_ASIGNADO",
+                    "credito:" + idCredito + ":cobrador:" + nuevo.getIdPersona(), mensajeCredito(credito, nuevo));
         }
+    }
+
+    @Override
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async("messagingExecutor")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notificarSolicitudCreditoResuelta(SolicitudCreditoResueltaEvent event) {
+        SolicitudCredito solicitud = solicitudRepository.findById(event.idSolicitud()).orElse(null);
+        if (solicitud == null || solicitud.getCliente() == null) return;
+        String referencia = "solicitud:" + event.idSolicitud() + ":cliente:" + solicitud.getCliente().getIdCliente();
+        String mensaje;
+        if ("APROBADA".equalsIgnoreCase(solicitud.getEstado())) {
+            mensaje = "🎉 ¡FELICIDADES, " + nombre(solicitud.getCliente()) + "!\n\n" +
+                    "Tu solicitud de crédito fue APROBADA.\n\n" +
+                    "📋 Solicitud: #" + solicitud.getIdSolicitud() + "\n" +
+                    "💰 Monto aprobado: $" + dinero(solicitud.getMontoAprobado()) + "\n" +
+                    ("AUMENTO_LINEA".equals(solicitud.getTipoSolicitud())
+                            ? "🏦 Tu nueva línea de crédito ha sido actualizada.\n"
+                            : "✅ Ya puedes utilizar tu línea de crédito.\n") +
+                    "\nGracias por confiar en nosotros.";
+        } else if ("RECHAZADA".equalsIgnoreCase(solicitud.getEstado())) {
+            mensaje = "📋 ACTUALIZACIÓN DE SOLICITUD\n\nHola, " + nombre(solicitud.getCliente()) + ".\n\n" +
+                    "Tu solicitud de crédito #" + solicitud.getIdSolicitud() + " no fue aprobada en esta ocasión." +
+                    "\n\nMotivo: " + valor(solicitud.getObservaciones(), "Sin observaciones") +
+                    "\n\nSi deseas más información, comunícate con nosotros.";
+        } else return;
+        enviarUnaVez(telefonoCliente(solicitud.getCliente()), "SOLICITUD_RESUELTA", referencia, mensaje);
+    }
+
+    @Override
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async("messagingExecutor")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notificarVentaCreditoCreada(VentaCreditoCreadaEvent event) {
+        Venta venta = ventaRepository.findById(event.idVenta()).orElse(null);
+        if (venta == null || venta.getCliente() == null) return;
+        Credito credito = creditoRepository.findByVentaIdVenta(event.idVenta()).orElse(null);
+        if (credito == null) return;
+        List<VentaDetalle> detalles = detalleRepository.findByVentaIdVenta(event.idVenta());
+        String productos = detalles.stream()
+                .map(d -> "- " + d.getCantidad() + " x " + valor(d.getProducto() == null ? d.getDescripcion() : d.getProducto().getNombre(), "Producto") +
+                        " ($" + dinero(d.getSubtotal()) + ")")
+                .collect(Collectors.joining("\n"));
+        double anticipo = pagoRepository.findByVentaIdVenta(event.idVenta()).stream()
+                .filter(p -> p.getTipoPago() != null && !"credito".equalsIgnoreCase(p.getTipoPago().getNombre())
+                        && !"crédito".equalsIgnoreCase(p.getTipoPago().getNombre()))
+                .mapToDouble(p -> p.getMonto() == null ? 0 : p.getMonto()).sum();
+        String mensaje = "🎉 ¡GRACIAS POR TU COMPRA, " + nombre(venta.getCliente()) + "!\n\n" +
+                "🧾 VENTA A CRÉDITO: #" + venta.getIdVenta() + "\n\n" +
+                "🛒 PRODUCTOS\n" + valor(productos, "Sin productos") + "\n\n" +
+                "💰 Total de la venta: $" + dinero(venta.getTotal()) + "\n" +
+                "💵 Anticipo registrado: $" + dinero(anticipo) + "\n" +
+                "🏦 Saldo financiado: $" + dinero(credito.getCapitalFinanciado()) + "\n" +
+                "📅 Plazo: " + credito.getPlazoMeses() + " meses\n" +
+                "💳 Parcialidades: " + credito.getNumeroParcialidades() + "\n" +
+                "📆 Primer pago: " + (credito.getFechaPrimerPago() == null ? "Por confirmar" : credito.getFechaPrimerPago().format(DATE)) +
+                "\n\nConserva este mensaje como comprobante de tu crédito.";
+        enviarUnaVez(telefonoCliente(venta.getCliente()), "VENTA_CREDITO", "venta:" + event.idVenta(), mensaje);
+    }
+
+    @Override
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async("messagingExecutor")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notificarAbonoRegistrado(AbonoRegistradoEvent event) {
+        Abono abono = abonoRepository.findById(event.idAbono()).orElse(null);
+        if (abono == null || abono.getCredito() == null || abono.getCredito().getCliente() == null) return;
+        Credito credito = abono.getCredito();
+        double saldoNuevo = credito.getSaldoPendiente() == null ? 0 : credito.getSaldoPendiente();
+        double saldoAnterior = saldoNuevo + (abono.getMonto() == null ? 0 : abono.getMonto());
+        String mensaje = "✅ ABONO REGISTRADO\n\nHola, " + nombre(credito.getCliente()) + ".\n\n" +
+                "Tu abono quedó registrado correctamente.\n\n" +
+                "💳 Crédito: " + valor(credito.getFolio(), "#" + credito.getIdCredito()) + "\n" +
+                "💵 Monto abonado: $" + dinero(abono.getMonto()) + "\n" +
+                "📉 Saldo anterior: $" + dinero(saldoAnterior) + "\n" +
+                "📊 Saldo actual: $" + dinero(saldoNuevo) + "\n" +
+                "📅 Fecha: " + abono.getFecha().format(DATE) + "\n\n" +
+                (saldoNuevo <= 0.01 ? "🎉 ¡Felicidades, tu crédito ha quedado liquidado!" : "Gracias por tu pago.");
+        enviarUnaVez(telefonoCliente(credito.getCliente()), "ABONO_REGISTRADO", "abono:" + event.idAbono(), mensaje);
+    }
+
+    @Override
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async("messagingExecutor")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notificarVentaCancelada(VentaCanceladaEvent event) {
+        Venta venta = ventaRepository.findById(event.idVenta()).orElse(null);
+        if (venta == null || venta.getCliente() == null) return;
+        String mensaje = "⚠️ VENTA CANCELADA\n\nHola, " + nombre(venta.getCliente()) + ".\n\n" +
+                "La venta #" + venta.getIdVenta() + " fue cancelada correctamente.\n" +
+                "Fecha: " + (venta.getFecha() == null ? "-" : venta.getFecha().format(DATE)) + "\n" +
+                "Motivo: " + valor(venta.getMotivoCancelacion(), "Sin motivo especificado") +
+                "\n\nSi realizaste un pago, comunícate con nosotros para revisar la devolución o aplicación correspondiente.";
+        enviarUnaVez(telefonoCliente(venta.getCliente()), "VENTA_CANCELADA", "venta:" + event.idVenta(), mensaje);
     }
 
     @Override
@@ -179,6 +281,12 @@ public class WhatsAppServiceImpl implements WhatsAppService {
         enviarRegistro(m);
     }
 
+    private void enviarUnaVez(String telefono, String tipo, String referencia, String texto) {
+        if (mensajeRepository.existsByTipoAndReferenciaAndEstadoIn(tipo, referencia,
+                List.of("PENDIENTE", "ENVIADO", "DESHABILITADO"))) return;
+        enviar(telefono, tipo, referencia, texto);
+    }
+
     private void programar(String telefono, String tipo, String referencia, String texto, LocalDateTime fechaProgramada) {
         MensajeWhatsApp m = mensajeRepository.save(MensajeWhatsApp.builder().tipo(tipo).referencia(referencia)
                 .destinatario(normalizar(telefono)).mensaje(texto).estado("PENDIENTE").intentos(0)
@@ -223,6 +331,7 @@ public class WhatsAppServiceImpl implements WhatsAppService {
     }
     private String nombre(Persona p) { return p == null ? "Sin nombre" : nombre(p.getNombre(), p.getApellido()); }
     private String nombre(Cliente c) { return c == null ? "Sin cliente" : nombre(c.getNombre(), c.getApellidoPaterno()); }
+    private String telefonoCliente(Cliente c) { return c == null ? null : valor(c.getWhatsapp(), c.getTelefono()); }
     private String nombre(String a, String b) { return valor(a, "") + (b == null || b.isBlank() ? "" : " " + b); }
     private String direccion(Cliente c) { if (c == null) return "Sin dirección"; if (c.getDireccion() != null && !c.getDireccion().isBlank()) return c.getDireccion(); return String.join(", ", Arrays.asList(c.getCalle(), c.getNumExt(), c.getNumInt(), c.getColonia(), c.getMunicipio(), c.getEstado(), c.getCp()).stream().filter(v -> v != null && !v.isBlank()).toList()); }
     private String dinero(Double v) { return NumberFormat.getNumberInstance(Locale.US).format(v == null ? 0 : v); }

@@ -8,6 +8,7 @@ import com.bcsystems.bonds.repository.*;
 import com.bcsystems.bonds.service.SolicitudCreditoService;
 import com.bcsystems.bonds.service.AuditoriaService;
 import com.bcsystems.bonds.event.SolicitudCreditoCreadaEvent;
+import com.bcsystems.bonds.event.SolicitudCreditoResueltaEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -141,8 +142,9 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
             aprobar(s, monto, observaciones);
         } else { s.setEstado("RECHAZADA"); s.setObservaciones(request.observaciones()); }
         s.setResolutor(resolutor); s.setFechaResolucion(LocalDateTime.now());
-        solicitudRepository.save(s);
+            solicitudRepository.save(s);
         auditoriaService.registrar("SolicitudCredito", id, "RESOLUCION", resolutor.getUsuario(), s.getEstado());
+        eventPublisher.publishEvent(new SolicitudCreditoResueltaEvent(s.getIdSolicitud()));
         return toResponse(s);
     }
 
@@ -164,6 +166,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         solicitud.setFechaResolucion(LocalDateTime.now());
         solicitudRepository.save(solicitud);
         auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "RESOLUCION_AUTO", solicitud.getSolicitante().getUsuario(), solicitud.getEstado());
+        eventPublisher.publishEvent(new SolicitudCreditoResueltaEvent(solicitud.getIdSolicitud()));
     }
 
     private void aprobarAutomaticamenteComoAdministrador(SolicitudCredito solicitud) {
@@ -173,6 +176,7 @@ public class SolicitudCreditoServiceImpl implements SolicitudCreditoService {
         solicitudRepository.save(solicitud);
         auditoriaService.registrar("SolicitudCredito", solicitud.getIdSolicitud(), "RESOLUCION_AUTO",
                 solicitud.getSolicitante().getUsuario(), solicitud.getEstado());
+        eventPublisher.publishEvent(new SolicitudCreditoResueltaEvent(solicitud.getIdSolicitud()));
     }
 
     private boolean esAdministrador(Persona persona) {

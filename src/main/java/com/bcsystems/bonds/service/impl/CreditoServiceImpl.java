@@ -10,6 +10,7 @@ import com.bcsystems.bonds.service.CreditoService;
 import com.bcsystems.bonds.service.ScoreCreditoService;
 import com.bcsystems.bonds.service.WhatsAppService;
 import com.bcsystems.bonds.event.CreditoAsignadoEvent;
+import com.bcsystems.bonds.event.AbonoRegistradoEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -141,6 +142,7 @@ public class CreditoServiceImpl implements CreditoService {
 
         aplicarPagoParcialidades(credito, interesPagado, capitalPagado);
         scoreCreditoService.recalcular(cliente);
+        eventPublisher.publishEvent(new AbonoRegistradoEvent(abono.getIdAbono()));
         return toAbonoResponse(abono, usuario, saldoAnterior, saldoNuevo);
     }
 
@@ -230,6 +232,7 @@ public class CreditoServiceImpl implements CreditoService {
             aplicarPagoParcialidades(credito, interesPagado, capitalPagado);
 
             resultados.add(toAbonoResponse(abono, usuario, saldoAnterior, saldoNuevo));
+            eventPublisher.publishEvent(new AbonoRegistradoEvent(abono.getIdAbono()));
         }
 
         // Update cliente saldoActual
